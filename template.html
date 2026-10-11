@@ -253,13 +253,13 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && unl
 ["pointerdown", "keydown", "scroll", "touchstart"].forEach((ev) => document.addEventListener(ev, bumpIdle, { passive: true }));
 
 /* ================= store (db or local) ================= */
-const cache = { state: null, plays: {}, custom: {}, wallet: {} };
+const cache = { state: null, plays: {}, custom: {}, wallet: {}, confirms: {} };
 let db = null, uid = null, mode = "connecting", stateLoaded = false, readOnly = false, unsubs = [];
 const writeChains = {}, pending = {}, pendingSeq = {}; // pending[path]: latest not-yet-settled write (null = delete), overlaid on snapshots
 const isObj = (x) => x && typeof x === "object" && !Array.isArray(x);
 function deepMerge(a, b) { const o = { ...(a || {}) }; for (const k of Object.keys(b)) o[k] = isObj(b[k]) && isObj(o[k]) ? deepMerge(o[k], b[k]) : b[k]; return o; }
-function persistLocal() { LS.set("ptl_local", { state: cache.state, plays: cache.plays, custom: cache.custom, wallet: cache.wallet }); }
-function loadLocal() { const l = LS.get("ptl_local", null); if (l) Object.assign(cache, { state: l.state || null, plays: l.plays || {}, custom: l.custom || {}, wallet: l.wallet || {} }); stateLoaded = true; }
+function persistLocal() { LS.set("ptl_local", { state: cache.state, plays: cache.plays, custom: cache.custom, wallet: cache.wallet, confirms: cache.confirms }); }
+function loadLocal() { const l = LS.get("ptl_local", null); if (l) Object.assign(cache, { state: l.state || null, plays: l.plays || {}, custom: l.custom || {}, wallet: l.wallet || {}, confirms: l.confirms || {} }); stateLoaded = true; }
 const saveErr = (e) => toast(e && e.code === "quota_exceeded" ? "Storage is full." : "Couldn't save. Check your connection and try again.");
 function queueWrite(path, data, run) {
   // data: value to overlay on snapshots while in flight (null = deleted)
@@ -277,7 +277,7 @@ function applyPending() {
   }
 }
 function putDoc(col, id, data) {
-  // col: "game" (id "state"), "plays", "custom", "wallet"
+  // col: "game" (id "state"), "plays", "custom", "wallet", "confirms"
   if (col === "game") cache.state = data; else cache[col][id] = data;
   if (mode !== "db") { persistLocal(); render(); return Promise.resolve(); }
   const path = col + "/" + id;
@@ -317,7 +317,7 @@ function subscribeAll() {
     else if (!fromCache) { cache.state = null; stateLoaded = true; } // only a server-definitive miss means "no game yet"
     applyPending(); render();
   });
-  ["plays", "custom", "wallet"].forEach((col) => {
+  ["plays", "custom", "wallet", "confirms"].forEach((col) => {
     listen(col, db.collection(col), (qs) => { const m = {}; qs.docs.forEach((d) => { m[d.id] = d.data(); }); cache[col] = m; applyPending(); render(); });
   });
 }
@@ -344,7 +344,7 @@ async function initStore() {
 }
 
 /* ================= game model ================= */
-const DEFAULT_POINTS = { flirty: 1, teasing: 2, naughty: 3, custom: 1, skip: -2 };
+const DEFAULT_POINTS = { flirty: 1, teasing: 2, naughty: 3, custom: 1, confirm: 1, skip: -2 };
 function defaultState() {
   return { startDate: ymd(today()), days: 6, wcNight: 5, lightFinal: true, partialFirst: new Date().getHours() >= 12,
     slots: { truth: true, day: true, night: true, pillow: true }, points: { ...DEFAULT_POINTS }, claims: {}, epoch: 1 };
@@ -433,13 +433,28 @@ function slotPoints(st, sl) {
   const c = cardById(sl.cardId); if (!c) return 0;
   return (pts[c.tier] || 0) + (c.custom ? pts.custom : 0);
 }
+// Partner confirmation: each player writes only their own confirms doc (confirms/e{epoch}_{confirmer}),
+// mapping "<player>-<day>-<slot>" to the confirmed cardId, so a redrawn or undone card loses the bonus.
+const DARE_KEYS = new Set(["day", "night"]);
+function confirmedBy(st, pl, day, key, sl) {
+  const c = cache.confirms[`e${st.epoch}_${other(pl)}`];
+  return !!(sl && sl.status === "done" && DARE_KEYS.has(key) && c && c.map && c.map[`${pl}-${day}-${key}`] === sl.cardId);
+}
+const confirmPts = (st) => { const v = (st.points || DEFAULT_POINTS).confirm; return Number.isFinite(v) ? v : DEFAULT_POINTS.confirm; };
+function confirmBonus(st, pl, day, key, sl) { return confirmedBy(st, pl, day, key, sl) ? confirmPts(st) : 0; }
+function toConfirm(st, pl) {
+  // partner's finished dares this player hasn't confirmed yet
+  const p = other(pl), out = [];
+  epochPlays(st).forEach((x) => { if (x.player !== p) return; Object.entries(x.slots || {}).forEach(([k, sl]) => { if (DARE_KEYS.has(k) && sl.status === "done" && !confirmedBy(st, p, x.day, k, sl)) out.push(x.day + k); }); });
+  return out.length;
+}
 function scoreOf(st, pl, opts = {}) {
   let net = 0, gross = 0;
   epochPlays(st).forEach((x) => {
     if (opts.beforeDay && x.day >= opts.beforeDay) return;
     Object.entries(x.slots || {}).forEach(([k, sl]) => {
       if (x.player !== pl) return;
-      const v = slotPoints(st, sl); net += v; if (v > 0) gross += v;
+      const v = slotPoints(st, sl) + confirmBonus(st, pl, x.day, k, sl); net += v; if (v > 0) gross += v;
     });
     if (x.wild && x.wild.played) {
       const w = ALL[x.wild.cardId]; if (!w) return;
@@ -537,7 +552,7 @@ function viewToday(st) {
   else if (isLightFinal(st, d)) intro = `<p class="note">Last night: packing, early alarm. Tonight's dare is short and quiet. Scores lock at 4am.</p>`;
   const allResolved = slots.length > 0 && slots.every((s) => { const x = play.slots[s.key]; return x && (x.status === "done" || (x.status === "skipped" && x.forfeitDone)); });
   return `<div class="dayline"><h2>Day ${d} of ${st.days}</h2><span class="date">${esc(fmtDate(addDays(start, d - 1)))}</span></div>${tideBar(st, d)}${intro}
-  <p class="partnerline"><b>${PLAYERS[partner]}</b> has finished ${pdone} of ${pslots} today.</p>
+  <p class="partnerline"><b>${PLAYERS[partner]}</b> has finished ${pdone} of ${pslots} today.${(() => { const n = toConfirm(st, pl); return n ? ` <button type="button" class="reveal" data-tab="scores">${n} dare${n > 1 ? "s" : ""} to confirm</button>` : ""; })()}</p>
   <div class="stack">${slots.map((s) => slotCard(st, play, s, d)).join("")}${allResolved ? wildCard(st, play, d) : ""}</div>`;
 }
 function slotCard(st, play, s, d) {
@@ -545,7 +560,8 @@ function slotCard(st, play, s, d) {
   const top = (chip) => `<div class="slot-top"><span class="slot-name">${esc(s.name)}</span>${chip}</div>`;
   if (!x || !x.cardId) return `<section class="slot">${top(`<span class="chip ${s.tier}">${TIER_LABEL[s.tier]}</span>`)}<button type="button" class="facedown" data-act="flip" data-slot="${s.key}"><span>Tap to turn over</span></button></section>`;
   const c = cardById(x.cardId) || { tier: s.tier, text: "(missing card)" };
-  const statusChip = x.status === "done" ? `<span class="chip done">Done +${slotPoints(st, x)}</span>` : x.status === "skipped" ? `<span class="chip skipped">Skipped ${slotPoints(st, x)}</span>` : `<span class="chip ${c.tier}">${TIER_LABEL[c.tier] || ""}</span>`;
+  const bonus = confirmBonus(st, play.player, d, s.key, x), partner = PLAYERS[other(play.player)];
+  const statusChip = x.status === "done" ? `<span class="chip done">Done +${slotPoints(st, x) + bonus}</span>` : x.status === "skipped" ? `<span class="chip skipped">Skipped ${slotPoints(st, x)}</span>` : `<span class="chip ${c.tier}">${TIER_LABEL[c.tier] || ""}</span>`;
   let inner = `<p class="cardtext">${esc(c.text)}</p>`;
   if (c.codeWord) inner += `<div class="code">Code word: ${esc(c.codeWord)}</div>`;
   if (c.custom) inner += `<div class="from">Written for you by ${PLAYERS[c.author] || "your partner"}</div>`;
@@ -565,6 +581,7 @@ function slotCard(st, play, s, d) {
   } else if (x.status === "done") {
     if (x.answer) inner += `<div class="answer">Your answer: ${esc(x.answer)}</div>`;
     if (c.wc === "choice" && x.choice != null) inner += `<div class="answer">Your pick: ${esc(DECK.winnersChoice[x.choice])}</div>`;
+    if (DARE_KEYS.has(s.key)) inner += bonus ? `<div class="from">Confirmed by ${partner}, +${bonus} bonus</div>` : `<div class="from">Waiting for ${partner} to confirm (+${confirmPts(st)} bonus when they do)</div>`;
     inner += `<div class="actions"><button type="button" class="btn small ghost" data-act="undo" data-slot="${s.key}">Undo</button></div>`;
   } else if (x.status === "skipped") {
     const f = ALL[x.forfeitId];
@@ -606,7 +623,13 @@ function viewScores(st) {
           const full = (c.wc === "choice" && sl.choice != null ? DECK.winnersChoice[sl.choice] + (sl.answer ? " · " + sl.answer : "") : sl.answer);
           extra = p === pl || revealed.has(key) ? `<div class="answer">${p === pl ? "Your answer" : PLAYERS[p] + "'s answer"}: ${esc(full)}</div>` : `<button type="button" class="reveal" data-act="reveal" data-k="${key}">Tap to read ${PLAYERS[p]}'s answer</button>`;
         }
-        rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · ${esc(s.name)}</span><span>${sl.status === "done" ? "+" + slotPoints(st, sl) : slotPoints(st, sl)}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`);
+        const bonus = confirmBonus(st, p, day, s.key, sl);
+        if (DARE_KEYS.has(s.key) && sl.status === "done") {
+          if (bonus) extra += `<div class="from">Confirmed by ${PLAYERS[other(p)]}, +${bonus}</div>`;
+          else if (p === pl) extra += `<div class="from">Waiting for ${PLAYERS[other(p)]} to confirm</div>`;
+          else extra += `<div class="actions"><button type="button" class="btn small go" data-act="confirm" data-p="${p}" data-day="${day}" data-key="${s.key}">Confirm it happened (+${confirmPts(st)} for ${PLAYERS[p]})</button></div>`;
+        }
+        rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · ${esc(s.name)}</span><span>${sl.status === "done" ? "+" + (slotPoints(st, sl) + bonus) : slotPoints(st, sl)}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`);
       });
       if (x.wild && x.wild.played && ALL[x.wild.cardId]) rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · Wild card</span><span>${ALL[x.wild.cardId].self >= 0 ? "+" : ""}${ALL[x.wild.cardId].self}</span></div><div class="t">${esc(ALL[x.wild.cardId].text)}</div></div>`);
     });
@@ -673,7 +696,7 @@ function viewSetup(first) {
     <label class="check"><input type="checkbox" id="s-pillow" ${st.slots.pillow ? "checked" : ""}> Pillow talk truth (from day 2)</label>
     <h3 class="sec">Points</h3>
     <div class="grid2">
-      ${[["flirty", "Flirty"], ["teasing", "Teasing"], ["naughty", "Naughty"], ["custom", "Partner-written bonus"], ["skip", "Skip"]].map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k]}"></label>`).join("")}
+      ${[["flirty", "Flirty"], ["teasing", "Teasing"], ["naughty", "Naughty"], ["custom", "Partner-written bonus"], ["confirm", "Confirmed dare bonus"], ["skip", "Skip"]].map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k]}"></label>`).join("")}
     </div>
     <div class="actions"><button type="button" class="btn go" data-act="savesetup">${first ? "Start the game" : "Save setup"}</button></div>
     ${first ? "" : `
@@ -726,6 +749,14 @@ $("#game").addEventListener("click", async (e) => {
   if (act === "resetyes") { pendingConfirm = null; await updateState({ epoch: (S().epoch || 1) + 1 }); tab = "today"; toast("Game reset."); return; }
   if (act === "reveal") { revealed.add(el.dataset.k); return render(); }
   if (!st || !me()) return;
+  if (act === "confirm") {
+    const p = el.dataset.p, day = +el.dataset.day, key = el.dataset.key;
+    if (p === me() || !DARE_KEYS.has(key)) return;
+    const sl = ((playOf(st, p, day) || {}).slots || {})[key]; if (!sl || sl.status !== "done") return;
+    const id = `e${st.epoch}_${me()}`, doc = JSON.parse(JSON.stringify(cache.confirms[id] || { player: me(), epoch: st.epoch, map: {} }));
+    doc.map = doc.map || {}; doc.map[`${p}-${day}-${key}`] = sl.cardId;
+    await putDoc("confirms", id, doc); toast(`Confirmed. +${confirmPts(st)} for ${PLAYERS[p]}`); return;
+  }
 
   if (act === "flip") {
     const play = curPlay(st), s = slotDef(st, el.dataset.slot); if (!s || (play.slots[s.key] && play.slots[s.key].cardId)) return;
