@@ -16,7 +16,9 @@ mkdirSync(SHOTS, { recursive: true });
 const deck = JSON.parse(readFileSync(join(root, "deck.json"), "utf8"));
 const byText = new Map();
 for (const k of ["truth", "day", "night", "quick"]) deck[k].forEach((c) => byText.set(c.text, { ...c, pool: k }));
-const wildByText = new Map(deck.wild.map((w) => [w.text, w]));
+const WILD_MULT = 5;
+const renderWild = (w) => w.text.replace(/\{self\}/g, w.self * WILD_MULT).replace(/\{steal\}/g, Math.abs(w.partner) * WILD_MULT);
+const wildByText = new Map(deck.wild.map((w) => [renderWild(w), w]));
 
 let passed = 0; const failures = [];
 function check(cond, msg) { if (cond) { passed++; } else { failures.push(msg); console.log("  FAIL: " + msg); } }
@@ -178,10 +180,11 @@ for (let d = 1; d <= 6; d++) {
     note(after.text, "d3 swapped night");
     // skip / undo on daytime dare
     const s0 = await scores(page);
+    eq((await page.textContent('.slot:has([data-slot="day"]) [data-act="skip"]')).trim(), "Skip (-15)", "skip label shows Skip (-15)");
     await click(page, '.slot:has([data-slot="day"]) [data-act="skip"]');
     check(await page.locator(".forfeit").count() === 1, "skip shows a forfeit");
     const s1 = await scores(page);
-    eq(s1.coral, s0.coral - 2, "skip costs 2");
+    eq(s1.coral, s0.coral - 15, "skip costs 15");
     await click(page, '.slot:has([data-slot="day"]) [data-act="undo"]');
     eq((await scores(page)).coral, s0.coral, "undo restores score");
     check(await page.locator(".forfeit").count() === 0, "forfeit gone after undo");
@@ -204,13 +207,16 @@ for (let d = 1; d <= 6; d++) {
     await click(page, '[data-act="wild"]');
     const wt = (await page.textContent(".slot.wild .cardtext")).trim();
     const w = wildByText.get(wt); check(!!w, "wild card text in deck");
+    check(!/[{}]/.test(wt), `wild card text has no tokens ("${wt.slice(0, 50)}")`);
     await click(page, '[data-act="playwild"]');
+    const toastTxt = await page.textContent("#toast");
+    check(toastTxt.startsWith(`${w.self >= 0 ? "+" : ""}${w.self * WILD_MULT} for you`), `wild toast shows self*5 (${toastTxt})`);
     const s1 = await scores(page);
-    eq(s1.coral - s0.coral, w.self, "Play it adjusts own score by wild.self");
+    eq(s1.coral - s0.coral, w.self * WILD_MULT, "Play it adjusts own score by wild.self * 5");
   }
   if (d === 2) {
     const sc = await scores(page);
-    check(sc.coral >= 10, `gross >=10 after day 2 (score ${sc.coral})`);
+    check(sc.coral >= 100, `gross >=100 after day 2 (score ${sc.coral})`);
     await click(page, '[data-tab="wallet"]');
     check((await page.locator(".coupon").count()) >= 1, "wallet shows a coupon");
     await click(page, '.coupon [data-act="redeem"]');
@@ -341,22 +347,22 @@ console.log("Partner confirm");
   check(/Waiting for Riptide to confirm/.test(await pc.textContent(sec("day"))), "confirm: Coral's card waits for Riptide");
   const afterDone = await scores(pc);
   const tierPts = afterDone.coral - base.coral;
-  check(tierPts >= 1, "confirm: dare gives tier points before confirm");
+  eq(tierPts, 15, "confirm: flirty daytime dare gives dFlirty 15 before confirm");
   await swap("riptide");
   eq((await toConfirm() || "").trim(), "1 dare to confirm", "confirm: Riptide's Today shows 1 dare to confirm");
   await click(pc, '.partnerline [data-tab="scores"]');
   eq(await pc.locator('[data-act="confirm"]').count(), 1, "confirm: exactly one confirm button (truths have none)");
-  check(/Confirm it happened \(\+1 for Coral\)/.test(await pc.locator('[data-act="confirm"]').textContent()), "confirm: button label");
+  check(/Confirm it happened \(\+10 for Coral\)/.test(await pc.locator('[data-act="confirm"]').textContent()), "confirm: button label");
   await click(pc, '[data-act="confirm"]');
   eq(await pc.locator('[data-act="confirm"]').count(), 0, "confirm: button gone after confirming");
   check(/Confirmed by Riptide/.test(await pc.locator(".hrow", { hasText: cardText.slice(0, 30) }).first().textContent()), "confirm: row says Confirmed by Riptide");
   await click(pc, '[data-tab="today"]');
   eq(await toConfirm(), null, "confirm: Riptide's to-confirm count drops to 0");
   const conf = await scores(pc);
-  eq(conf.coral, afterDone.coral + 1, "confirm: Coral score +1");
+  eq(conf.coral, afterDone.coral + 10, "confirm: Coral score +10");
   eq(conf.riptide, base.riptide, "confirm: Riptide score unchanged");
   await swap("coral");
-  check(/Confirmed by Riptide, \+1 bonus/.test(await pc.textContent(sec("day"))), "confirm: Coral's card shows Confirmed by Riptide, +1 bonus");
+  check(/Confirmed by Riptide, \+10 bonus/.test(await pc.textContent(sec("day"))), "confirm: Coral's card shows Confirmed by Riptide, +10 bonus");
   // undo removes the bonus
   await click(pc, `${sec("day")} [data-act="undo"]`);
   const undone = await scores(pc);
@@ -368,11 +374,63 @@ console.log("Partner confirm");
   eq(redone.coral, conf.coral, "confirm: bonus returns on re-Done with same card");
   // bonus value from Setup
   await click(pc, '[data-tab="settings"]');
-  await pc.fill("#s-p-confirm", "2"); await click(pc, '[data-act="savesetup"]');
+  await pc.fill("#s-p-confirm", "20"); await click(pc, '[data-act="savesetup"]');
   const two = await scores(pc);
-  eq(two.coral, conf.coral + 1, "confirm: bonus 2 raises score by 1 more");
-  check(/\+2 bonus/.test(await pc.textContent(sec("day"))), "confirm: card shows +2 bonus");
+  eq(two.coral, conf.coral + 10, "confirm: bonus 20 raises score by 10 more");
+  check(/\+20 bonus/.test(await pc.textContent(sec("day"))), "confirm: card shows +20 bonus");
   await pc.context().close();
+}
+
+/* ===================== points scale ===================== */
+console.log("Points scale");
+{
+  const pp = await newPage();
+  await firstSetup(pp, 6);
+  await setDay(pp, 1);
+  const sl = await flipAll(pp);
+  const tr = sl.find((s) => s.name === "Afternoon truth"), dd = sl.find((s) => s.name === "Daytime dare");
+  eq(tr.chip, "Flirty", "points: day1 truth flirty"); eq(dd.chip, "Flirty", "points: day1 daytime flirty");
+  const z = (await scores(pp)).coral;
+  await pp.fill("#ans-d1-truth", "a"); await click(pp, '.slot:has([data-slot="truth"]) [data-act="done"]');
+  const afterT = (await scores(pp)).coral;
+  eq(afterT - z, 10, "flirty truth +10");
+  await click(pp, '.slot:has([data-slot="day"]) [data-act="done"]');
+  const afterD = (await scores(pp)).coral;
+  eq(afterD - afterT, 15, "flirty daytime dare +15 (differs from truth)");
+  await click(pp, '.slot:has([data-slot="night"]) [data-act="done"]');
+  eq((await scores(pp)).coral - afterD, 20, "teasing night dare +20");
+
+  await click(pp, '[data-tab="settings"]');
+  const want = { tFlirty: 10, dFlirty: 15, tTeasing: 15, dTeasing: 20, tNaughty: 25, dNaughty: 40, custom: 5, confirm: 10, skip: -15, wild: 5, coupon: 100 };
+  for (const [k, v] of Object.entries(want)) eq(await pp.inputValue("#s-p-" + k), String(v), `setup default s-p-${k}`);
+  eq(await pp.locator("#s-p-flirty").count(), 0, "old s-p-flirty input gone");
+  const total = (await scores(pp)).coral;
+  await click(pp, '[data-tab="wallet"]');
+  eq(await pp.locator(".coupon").count(), 0, "no coupon below 100 points");
+  await click(pp, '[data-tab="settings"]');
+  await pp.fill("#s-p-coupon", "15"); await click(pp, '[data-act="savesetup"]');
+  await click(pp, '[data-tab="wallet"]');
+  eq(await pp.locator(".coupon").count(), Math.floor(total / 15), "coupon count follows s-p-coupon (15)");
+  check(/One coupon for every 15 points/.test(await pp.textContent("#game")), "wallet text uses coupon setting");
+  await pp.context().close();
+
+  // old-style saved points scale is replaced by new defaults (inject before load)
+  const op = await newPage();
+  await firstSetup(op, 6);
+  await op.evaluate(() => {
+    const l = JSON.parse(localStorage.getItem("ptl_local"));
+    l.state.points = { flirty: 1, teasing: 2, naughty: 3, custom: 1, confirm: 2, skip: -2, wild: 1, coupon: 10 };
+    localStorage.setItem("ptl_local", JSON.stringify(l));
+  });
+  await setDay(op, 1);
+  await flipAll(op);
+  eq((await op.textContent('.slot:has([data-slot="day"]) [data-act="skip"]')).trim(), "Skip (-15)", "old points: skip label uses new default");
+  const o0 = (await scores(op)).coral;
+  await op.fill("#ans-d1-truth", "a"); await click(op, '.slot:has([data-slot="truth"]) [data-act="done"]');
+  eq((await scores(op)).coral - o0, 10, "old-style saved points scored with new defaults (flirty truth +10)");
+  await click(op, '[data-tab="settings"]');
+  eq(await op.inputValue("#s-p-coupon"), "100", "old points: setup shows new coupon default");
+  await op.context().close();
 }
 
 /* ===================== db mode (fake window.claude, shared in-memory store) ===================== */
