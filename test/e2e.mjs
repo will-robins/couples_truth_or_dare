@@ -319,6 +319,56 @@ for (const days of [3, 10]) {
   await p2.context().close();
 }
 
+/* ===================== partner confirm (local) ===================== */
+console.log("Partner confirm");
+{
+  const pc = await newPage();
+  await firstSetup(pc, 6);
+  await setDay(pc, 1);
+  const sec = (k) => `.slot:has([data-slot="${k}"])`;
+  const swap = async (p) => { await click(pc, '[data-tab="settings"]'); await click(pc, '[data-act="release"]'); await click(pc, `[data-act="claim"][data-p="${p}"]`); await pc.waitForSelector(".tabs"); await click(pc, '[data-tab="today"]'); };
+  const toConfirm = async () => { const b = pc.locator('.partnerline [data-tab="scores"]'); return (await b.count()) ? await b.textContent() : null; };
+  await click(pc, `${sec("day")} [data-act="flip"]`);
+  const cardText = (await slots(pc)).find((s) => s.name === "Daytime dare").text;
+  const base = await scores(pc);
+  await click(pc, `${sec("day")} [data-act="done"]`);
+  check(/Waiting for Riptide to confirm/.test(await pc.textContent(sec("day"))), "confirm: Coral's card waits for Riptide");
+  const afterDone = await scores(pc);
+  const tierPts = afterDone.coral - base.coral;
+  check(tierPts >= 1, "confirm: dare gives tier points before confirm");
+  await swap("riptide");
+  eq((await toConfirm() || "").trim(), "1 dare to confirm", "confirm: Riptide's Today shows 1 dare to confirm");
+  await click(pc, '.partnerline [data-tab="scores"]');
+  eq(await pc.locator('[data-act="confirm"]').count(), 1, "confirm: exactly one confirm button (truths have none)");
+  check(/Confirm it happened \(\+1 for Coral\)/.test(await pc.locator('[data-act="confirm"]').textContent()), "confirm: button label");
+  await click(pc, '[data-act="confirm"]');
+  eq(await pc.locator('[data-act="confirm"]').count(), 0, "confirm: button gone after confirming");
+  check(/Confirmed by Riptide/.test(await pc.locator(".hrow", { hasText: cardText.slice(0, 30) }).first().textContent()), "confirm: row says Confirmed by Riptide");
+  await click(pc, '[data-tab="today"]');
+  eq(await toConfirm(), null, "confirm: Riptide's to-confirm count drops to 0");
+  const conf = await scores(pc);
+  eq(conf.coral, afterDone.coral + 1, "confirm: Coral score +1");
+  eq(conf.riptide, base.riptide, "confirm: Riptide score unchanged");
+  await swap("coral");
+  check(/Confirmed by Riptide, \+1 bonus/.test(await pc.textContent(sec("day"))), "confirm: Coral's card shows Confirmed by Riptide, +1 bonus");
+  // undo removes the bonus
+  await click(pc, `${sec("day")} [data-act="undo"]`);
+  const undone = await scores(pc);
+  eq(undone.coral, base.coral, "confirm: undo drops tier + bonus");
+  // re-done with the same card brings it back
+  check((await slots(pc)).find((s) => s.name === "Daytime dare").text === cardText, "confirm: same card after undo");
+  await click(pc, `${sec("day")} [data-act="done"]`);
+  const redone = await scores(pc);
+  eq(redone.coral, conf.coral, "confirm: bonus returns on re-Done with same card");
+  // bonus value from Setup
+  await click(pc, '[data-tab="settings"]');
+  await pc.fill("#s-p-confirm", "2"); await click(pc, '[data-act="savesetup"]');
+  const two = await scores(pc);
+  eq(two.coral, conf.coral + 1, "confirm: bonus 2 raises score by 1 more");
+  check(/\+2 bonus/.test(await pc.textContent(sec("day"))), "confirm: card shows +2 bonus");
+  await pc.context().close();
+}
+
 /* ===================== db mode (fake window.claude, shared in-memory store) ===================== */
 console.log("db mode");
 const dbStore = new Map(); const dbPages = new Set();
@@ -387,6 +437,20 @@ async function pinSetup(page) {
   // flip persists
   await click(A, '[data-tab="today"]'); await click(A, '[data-act="flip"]');
   check([...dbStore.keys()].some((k) => k.startsWith("plays/")), "db: flip writes a plays doc");
+
+  // partner confirm, live across two phones (A = Coral, B = Riptide)
+  await click(A, '[data-tab="today"]');
+  await click(A, '.slot:has([data-slot="night"]) [data-act="flip"]');
+  await click(A, '.slot:has([data-slot="night"]) [data-act="done"]');
+  const aScore = async () => { await click(A, '[data-tab="scores"]'); const n = await A.$$eval(".score .n", (e) => e.map((x) => +x.textContent)); return n[0]; };
+  const before = await aScore();
+  await click(B, '[data-tab="scores"]');
+  eq(await B.locator('[data-act="confirm"]').count(), 1, "db confirm: Riptide sees the confirm button live");
+  await click(B, '[data-act="confirm"]');
+  check([...dbStore.keys()].some((k) => /^confirms\/e\d+_riptide$/.test(k)), "db confirm: writes confirms/e{epoch}_riptide");
+  await pause(A, 150);
+  eq(await aScore(), before + 1, "db confirm: Coral's score updates live");
+  check(/Confirmed by Riptide/.test(await A.textContent("#game")), "db confirm: Coral sees Confirmed by Riptide");
 
   // M1: release nulls the slot (key kept)
   await click(A, '[data-tab="settings"]'); await click(A, '[data-act="release"]');
