@@ -319,6 +319,92 @@ for (const days of [3, 10]) {
   await p2.context().close();
 }
 
+/* ===================== db mode (fake window.claude, shared in-memory store) ===================== */
+console.log("db mode");
+const dbStore = new Map(); const dbPages = new Set();
+const dmerge = (a, b) => { const o = { ...(a || {}) }; for (const k of Object.keys(b)) o[k] = b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) && o[k] && typeof o[k] === "object" ? dmerge(o[k], b[k]) : b[k]; return o; };
+const dbSnap = () => JSON.stringify([...dbStore]);
+async function dbBroadcast() { const s = dbSnap(); await Promise.all([...dbPages].map((p) => p.evaluate((x) => window.__notify(x), s).catch(() => {}))); }
+function fakeClaude({ uid, hold }) {
+  window.__uid = uid; window.__hold = hold; window.__store = new Map(); const ls = new Set();
+  const snapOf = (path) => { const v = window.__store.get(path); return { exists: v !== undefined, data: () => v === undefined ? undefined : JSON.parse(JSON.stringify(v)), metadata: { fromCache: false, hasPendingWrites: false } }; };
+  const colSnap = (c) => ({ docs: [...window.__store].filter(([k]) => k.startsWith(c + "/")).map(([k, v]) => ({ id: k.slice(c.length + 1), data: () => JSON.parse(JSON.stringify(v)) })), metadata: { fromCache: false, hasPendingWrites: false } });
+  const fire = () => ls.forEach((f) => f());
+  window.__notify = (s) => { window.__store = new Map(JSON.parse(s)); fire(); };
+  window.__release = () => { window.__hold = false; fire(); };
+  const op = (o, path, data) => window.__op(o, path, data == null ? null : JSON.stringify(data));
+  const doc = (path) => ({ set: (d) => op("set", path, d), update: (d) => op("update", path, d), delete: () => op("delete", path),
+    onSnapshot(cb) { const f = () => { if (window.__hold && path === "game/state") cb({ exists: false, data: () => undefined, metadata: { fromCache: true, hasPendingWrites: false } }); else cb(snapOf(path)); }; ls.add(f); setTimeout(f, 0); return () => ls.delete(f); } });
+  const col = (c) => ({ onSnapshot(cb) { const f = () => cb(colSnap(c)); ls.add(f); setTimeout(f, 0); return () => ls.delete(f); } });
+  const dbo = { doc, collection: col };
+  window.claude = { use: async (n) => { if (n === "user") return { id: async () => window.__uid, can: async () => true }; await window.__sync(); return dbo; } };
+}
+async function newDbPage(uid, hold = false) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  page.on("pageerror", (e) => consoleErrors.push("pageerror: " + e.message));
+  await page.exposeFunction("__op", async (o, path, json) => {
+    const d = json == null ? null : JSON.parse(json);
+    if (o === "set") dbStore.set(path, d); else if (o === "update") { if (!dbStore.has(path)) throw Object.assign(new Error("nf"), { code: "not_found" }); dbStore.set(path, dmerge(dbStore.get(path), d)); } else dbStore.delete(path);
+    await dbBroadcast();
+  });
+  await page.exposeFunction("__sync", async () => { await page.evaluate((x) => { window.__store = new Map(JSON.parse(x)); }, dbSnap()); });
+  await page.addInitScript(fakeClaude, { uid, hold });
+  dbPages.add(page);
+  await page.goto(URL_);
+  return page;
+}
+async function pinSetup(page) {
+  await page.fill("#d-input", "##"); await page.press("#d-input", "Enter");
+  await page.fill("#d-pin-a", "4321"); await page.fill("#d-pin-b", "4321"); await click(page, "#d-pin-save");
+}
+{
+  // M3: a cache-only "missing" snapshot never shows first-setup
+  const h = await newDbPage("u_h", true);
+  await pinSetup(h); await pause(h, 200);
+  check(/Connecting/.test(await h.textContent("#game")) && (await h.locator("#s-start").count()) === 0, "db: Connecting… (no setup screen) until a server snapshot");
+  await h.evaluate(() => window.__release()); await pause(h, 100);
+  check((await h.locator("#s-start").count()) === 1, "db: setup screen after server says no game");
+  await h.context().close(); dbPages.delete(h);
+
+  const A = await newDbPage("u_a");
+  await pinSetup(A); await A.waitForSelector("#s-start");
+  await A.fill("#s-start", "2026-10-11"); await A.fill("#s-days", "6");
+  await click(A, '[data-act="savesetup"]'); await A.waitForSelector('[data-act="claim"]');
+  check(dbStore.has("game/state"), "db: setup creates game/state");
+  await click(A, '[data-act="claim"][data-p="coral"]'); await A.waitForSelector(".tabs");
+  const ck = dbStore.get("game/state").claims.coral;
+  check(/^u_a:/.test(ck), "db: coral claimed with uid:device key");
+
+  const B = await newDbPage("u_b");
+  await pinSetup(B); await B.waitForSelector('[data-act="claim"]');
+  check((await B.locator("#s-start").count()) === 0, "db: second phone sees the picker, not setup");
+  const cb = B.locator('[data-act="claim"][data-p="coral"]');
+  check(/Taken/.test(await cb.textContent()) && !(await cb.isDisabled()), "db: taken slot is tappable and labelled Taken");
+  await click(B, '[data-act="claim"][data-p="riptide"]'); await B.waitForSelector(".tabs");
+
+  // flip persists
+  await click(A, '[data-tab="today"]'); await click(A, '[data-act="flip"]');
+  check([...dbStore.keys()].some((k) => k.startsWith("plays/")), "db: flip writes a plays doc");
+
+  // M1: release nulls the slot (key kept)
+  await click(A, '[data-tab="settings"]'); await click(A, '[data-act="release"]');
+  await A.waitForSelector('[data-act="claim"]');
+  let cl = dbStore.get("game/state").claims;
+  check("coral" in cl && cl.coral === null && /^u_b:/.test(cl.riptide), "db: release sets coral to null, keeps riptide");
+  // M2: take over riptide in two taps
+  const rb = A.locator('[data-act="claim"][data-p="riptide"]');
+  await rb.click(); await pause(A);
+  check(/Tap again to take over/.test(await rb.textContent()), "db: first tap asks to confirm takeover");
+  check(/^u_b:/.test(dbStore.get("game/state").claims.riptide), "db: first tap does not claim");
+  await rb.click(); await pause(A, 100);
+  cl = dbStore.get("game/state").claims;
+  check(/^u_a:/.test(cl.riptide) && cl.coral === null, "db: second tap takes over riptide");
+  check((await A.locator(".tabs").count()) === 1 && (await B.locator('[data-act="claim"]').count()) === 2, "db: A plays, B is bounced to picker");
+  await A.context().close(); await B.context().close();
+}
+
 /* ===================== wrap up ===================== */
 check(consoleErrors.length === 0, "no console/page errors: " + consoleErrors.join(" | "));
 await browser.close();
