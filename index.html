@@ -1,0 +1,715 @@
+<title>Beach Packing List</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shrikhand&family=Outfit:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: decoy is a plain single-column checklist; the game is a single-column
+   phone app with a sticky header, tab bar, and stacked face-down cards. */
+:root {
+  /* decoy (theme-aware, deliberately ordinary) */
+  --d-bg: #f6f8f8; --d-fg: #1e2a2c; --d-muted: #66777a; --d-line: #dbe3e4; --d-card: #ffffff; --d-accent: #2a7f86;
+  /* game (deliberately single dark look: night tide) */
+  --ink: #0c1820; --sea: #132a36; --sea-2: #1b3846; --foam: #eaf2ef; --foam-dim: #a9bdb9;
+  --coral: #ff7f61; --sand: #e9c995; --kelp: #67b8a3; --heat: #e0457b; --line: #24414f;
+  --f-display: "Shrikhand", "Georgia", serif;
+  --f-body: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-plain: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --d-bg: #141b1c; --d-fg: #e3ebec; --d-muted: #93a4a6; --d-line: #2b3739; --d-card: #1c2526; --d-accent: #5fb4ba; color-scheme: dark } }
+:root[data-theme="dark"] { --d-bg: #141b1c; --d-fg: #e3ebec; --d-muted: #93a4a6; --d-line: #2b3739; --d-card: #1c2526; --d-accent: #5fb4ba; color-scheme: dark }
+
+html, body { min-height: 100%; }
+body { background: var(--d-bg); color: var(--d-fg); font-family: var(--f-plain); }
+body.in-game { background: var(--ink); color: var(--foam); }
+button, input, select, textarea { font: inherit; }
+:focus-visible { outline: 2px solid var(--d-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- decoy ---------- */
+#decoy { max-width: 560px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 40px; }
+.d-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.d-head h1 { font-size: 1.35rem; margin: 0; font-weight: 650; }
+.d-icon { background: none; border: 0; font-size: 1.4rem; cursor: pointer; padding: 4px; line-height: 1; }
+.d-sub { color: var(--d-muted); margin: 4px 0 16px; font-size: .9rem; }
+.d-form { display: flex; gap: 8px; margin-bottom: 14px; }
+.d-form input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--d-line); border-radius: 8px; background: var(--d-card); color: var(--d-fg); }
+.d-form button { padding: 10px 14px; border-radius: 8px; border: 0; background: var(--d-accent); color: #fff; font-weight: 600; }
+.d-list { list-style: none; margin: 0; padding: 0; background: var(--d-card); border: 1px solid var(--d-line); border-radius: 10px; }
+.d-list li { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-top: 1px solid var(--d-line); }
+.d-list li:first-child { border-top: 0; }
+.d-list li.done span { text-decoration: line-through; color: var(--d-muted); }
+.d-list li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.d-list .x { background: none; border: 0; color: var(--d-muted); font-size: 1.1rem; cursor: pointer; }
+.d-count { color: var(--d-muted); font-size: .85rem; margin-top: 10px; }
+.d-pin { display: grid; gap: 8px; margin-bottom: 14px; padding: 12px; border: 1px dashed var(--d-line); border-radius: 10px; }
+.d-pin input { padding: 10px 12px; border: 1px solid var(--d-line); border-radius: 8px; background: var(--d-card); color: var(--d-fg); }
+.d-pin .row { display: flex; gap: 8px; }
+.d-pin button { padding: 9px 12px; border-radius: 8px; border: 1px solid var(--d-line); background: var(--d-card); color: var(--d-fg); }
+.d-pin .msg { color: var(--d-muted); font-size: .85rem; }
+
+/* ---------- game ---------- */
+#game { font-family: var(--f-body); max-width: 560px; margin: 0 auto; padding-inline: 16px; padding-block: 0 96px; }
+#game :focus-visible { outline-color: var(--sand); }
+.g-head { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--ink); display: flex; align-items: center; gap: 10px; padding-block: 14px 10px; border-bottom: 1px solid var(--line); }
+.g-head h1 { font-family: var(--f-display); font-weight: 400; font-size: 1.55rem; margin: 0; color: var(--coral); letter-spacing: .5px; flex: 1; }
+.g-head .who { font-size: .8rem; color: var(--foam-dim); text-align: right; line-height: 1.2; }
+.g-head .who b { color: var(--foam); display: block; font-size: .95rem; }
+.lockbtn { background: var(--sea); border: 1px solid var(--line); color: var(--foam); border-radius: 999px; padding: 7px 12px; font-size: .85rem; cursor: pointer; }
+.sync { font-size: .75rem; color: var(--foam-dim); margin-top: 8px; }
+.sync.warn { color: var(--sand); }
+
+.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--ink); border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(5, 1fr); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.tabs button { background: none; border: 0; color: var(--foam-dim); padding: 12px 2px 14px; font-size: .78rem; font-weight: 500; letter-spacing: .3px; cursor: pointer; }
+.tabs button[aria-current="true"] { color: var(--coral); box-shadow: inset 0 2px 0 var(--coral); }
+
+.dayline { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 18px 0 4px; flex-wrap: wrap; }
+.dayline h2 { font-family: var(--f-display); font-weight: 400; font-size: 1.9rem; margin: 0; color: var(--foam); }
+.dayline .date { color: var(--foam-dim); font-size: .9rem; }
+.tide { display: flex; gap: 4px; margin: 8px 0 16px; }
+.tide i { flex: 1; height: 6px; border-radius: 3px; background: var(--sea-2); }
+.tide i.past { background: var(--kelp); opacity: .55; }
+.tide i.now { background: var(--coral); }
+.tide i.wc { box-shadow: 0 0 0 1px var(--sand); }
+.note { color: var(--foam-dim); font-size: .9rem; line-height: 1.45; margin: 0 0 14px; }
+.partnerline { font-size: .85rem; color: var(--foam-dim); margin: 0 0 14px; }
+.partnerline b { color: var(--foam); font-weight: 600; }
+
+.stack { display: grid; gap: 14px; }
+.slot { background: var(--sea); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+.slot-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.slot-name { font-size: .78rem; text-transform: uppercase; letter-spacing: 1.4px; color: var(--foam-dim); font-weight: 600; }
+.chip { font-size: .72rem; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.chip.flirty { color: var(--sand); }
+.chip.teasing { color: var(--coral); }
+.chip.naughty { color: var(--heat); }
+.chip.done { color: var(--kelp); }
+.chip.skipped { color: var(--foam-dim); }
+.facedown { appearance: none; width: 100%; border: 1px dashed var(--line); border-radius: 10px; min-height: 108px; cursor: pointer; color: var(--foam-dim); font-size: .95rem;
+  background: repeating-linear-gradient(-12deg, var(--sea-2) 0 10px, var(--sea) 10px 20px); }
+.facedown span { background: var(--ink); padding: 6px 12px; border-radius: 999px; }
+.cardtext { font-size: 1.12rem; line-height: 1.45; margin: 0; overflow-wrap: anywhere; }
+.code { font-size: .82rem; color: var(--sand); }
+.from { font-size: .8rem; color: var(--kelp); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--line); background: var(--sea-2); color: var(--foam); cursor: pointer; font-weight: 500; }
+.btn.go { background: var(--coral); border-color: var(--coral); color: #1b0e0a; font-weight: 600; }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 7px 10px; font-size: .85rem; }
+.btn[disabled] { opacity: .45; cursor: default; }
+textarea.g, input.g, select.g { width: 100%; box-sizing: border-box; background: var(--ink); color: var(--foam); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+textarea.g { min-height: 84px; resize: vertical; }
+.forfeit { border-top: 1px dashed var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.forfeit .lbl { font-size: .75rem; letter-spacing: 1.2px; text-transform: uppercase; color: var(--foam-dim); }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; }
+.opt input { margin-top: 4px; }
+
+.wild { border: 1px solid var(--sand); background: linear-gradient(160deg, var(--sea-2), var(--sea)); }
+.wild .slot-name { color: var(--sand); }
+
+.scores { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+.score { background: var(--sea); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.score.lead { border-color: var(--coral); }
+.score .n { font-family: var(--f-display); font-size: 2.6rem; color: var(--foam); line-height: 1; font-variant-numeric: tabular-nums; }
+.score .p { font-size: .85rem; color: var(--foam-dim); margin-top: 6px; }
+.score .tag { font-size: .72rem; letter-spacing: 1px; text-transform: uppercase; color: var(--coral); }
+h3.sec { font-size: .8rem; letter-spacing: 1.4px; text-transform: uppercase; color: var(--foam-dim); margin: 22px 0 10px; font-weight: 600; }
+.hist { display: grid; gap: 8px; }
+.hrow { background: var(--sea); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+.hrow .meta { display: flex; justify-content: space-between; gap: 8px; font-size: .78rem; color: var(--foam-dim); flex-wrap: wrap; }
+.hrow .t { font-size: .95rem; line-height: 1.4; overflow-wrap: anywhere; }
+.reveal { background: none; border: 1px dashed var(--line); color: var(--sand); border-radius: 8px; padding: 6px 10px; cursor: pointer; text-align: left; font-size: .9rem; }
+.answer { color: var(--sand); font-size: .95rem; overflow-wrap: anywhere; }
+
+.coupon { background: var(--sand); color: #2a1d0c; border-radius: 12px; padding: 14px; display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 2px dashed #a8834b; }
+.coupon.used { opacity: .45; text-decoration: line-through; }
+.coupon b { font-weight: 600; }
+.coupon .btn { background: #2a1d0c; color: var(--sand); border-color: #2a1d0c; }
+.progress { height: 8px; border-radius: 4px; background: var(--sea-2); overflow: hidden; margin: 6px 0 2px; }
+.progress i { display: block; height: 100%; background: var(--sand); }
+
+.form { display: grid; gap: 12px; }
+.form label { display: grid; gap: 6px; font-size: .88rem; color: var(--foam-dim); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; background: var(--sea); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; color: var(--foam); cursor: pointer; font-size: .88rem; }
+.seg input { accent-color: var(--coral); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check { display: flex !important; grid-template-columns: none; align-items: center; gap: 10px; color: var(--foam) !important; }
+.check input { accent-color: var(--coral); width: 18px; height: 18px; }
+.danger { color: var(--heat); border-color: var(--heat); background: transparent; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); background: var(--foam); color: var(--ink); padding: 9px 14px; border-radius: 999px; font-size: .9rem; z-index: 9; }
+.hero { text-align: center; padding: 28px 0 8px; }
+.hero h2 { font-family: var(--f-display); font-weight: 400; font-size: 2.2rem; color: var(--coral); margin: 0 0 6px; text-wrap: balance; }
+.pick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.pick button { background: var(--sea); border: 1px solid var(--line); color: var(--foam); border-radius: 14px; padding: 22px 10px; cursor: pointer; display: grid; gap: 6px; }
+.pick button b { font-family: var(--f-display); font-weight: 400; font-size: 1.5rem; }
+.pick button.coral b { color: var(--coral); }
+.pick button.riptide b { color: var(--kelp); }
+.pick button[disabled] { opacity: .4; cursor: default; }
+.empty { color: var(--foam-dim); font-size: .92rem; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; line-height: 1.45; }
+@media (max-width: 380px) { .grid2, .scores { grid-template-columns: 1fr; } }
+</style>
+
+<div id="decoy">
+  <div class="d-head">
+    <h1>Beach Week Packing List</h1>
+    <button class="d-icon" id="d-icon" type="button" aria-label="Sunscreen reminder">🧴</button>
+  </div>
+  <p class="d-sub">Don't forget the chargers this time.</p>
+  <div class="d-pin" id="d-pin" hidden>
+    <div class="msg" id="d-pin-msg">Choose a PIN (4–8 digits).</div>
+    <input id="d-pin-a" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+    <input id="d-pin-b" type="password" inputmode="numeric" autocomplete="off" placeholder="Repeat PIN">
+    <div class="row"><button type="button" id="d-pin-save">Save</button><button type="button" id="d-pin-cancel">Cancel</button></div>
+  </div>
+  <form class="d-form" id="d-form" autocomplete="off">
+    <input id="d-input" placeholder="Add item…" aria-label="Add item" enterkeyhint="done" autocomplete="off">
+    <button type="submit">Add</button>
+  </form>
+  <ul class="d-list" id="d-list"></ul>
+  <div class="d-count" id="d-count"></div>
+</div>
+
+<div id="game" hidden></div>
+
+<script>const DECK = {"version":1,"truth":[{"id":"ft1","tier":"flirty","minProgress":0,"text":"What was the exact moment you knew you were attracted to me? Be specific: what was I wearing, saying, doing?"},{"id":"ft2","tier":"flirty","minProgress":0,"text":"Which part of me do you sneak a look at most when you think I'm not paying attention?"},{"id":"ft3","tier":"flirty","minProgress":0,"text":"What's one everyday thing I do that makes you want me more?"},{"id":"ft4","tier":"flirty","minProgress":0,"text":"Describe the best kiss we've ever had. Where were we and why did it work?"},{"id":"ft5","tier":"flirty","minProgress":0,"text":"What outfit of mine do you secretly hope I'll wear this week?"},{"id":"ft6","tier":"flirty","minProgress":0,"text":"If you could relive one date from before the kids, which one and why?"},{"id":"ft7","tier":"flirty","minProgress":0,"text":"What's a compliment you've thought about me recently but never said out loud?"},{"id":"ft8","tier":"flirty","minProgress":0,"text":"What smell, song or place instantly makes you think of me?"},{"id":"tt1","tier":"teasing","minProgress":0,"text":"What were you actually thinking about the last time you caught yourself staring at me in public?"},{"id":"tt2","tier":"teasing","minProgress":0,"text":"Where's the riskiest place you've ever wanted to kiss me and didn't?"},{"id":"tt3","tier":"teasing","minProgress":0,"text":"What's one thing I wear to bed, or don't, that drives you a little crazy?"},{"id":"tt4","tier":"teasing","minProgress":0,"text":"Which of our past nights together do you replay in your head most often?"},{"id":"tt5","tier":"teasing","minProgress":0,"text":"When you see me in a swimsuit this week, what's the first thing you want to do?"},{"id":"tt6","tier":"teasing","minProgress":0,"text":"What's a text you've wanted to send me in the middle of the day but didn't have the nerve?"},{"id":"tt7","tier":"teasing","minProgress":0,"text":"Rate how much you want me right now, 1 to 10. What would move it up one point?"},{"id":"tt8","tier":"teasing","minProgress":0,"text":"What's one thing I could whisper to you at dinner that would ruin your concentration?"},{"id":"tt9","tier":"teasing","minProgress":0,"text":"Which room or spot on this trip have you already pictured us alone in?"},{"id":"tt10","tier":"teasing","minProgress":0,"text":"What's the most attractive thing I did today that I probably didn't notice?"},{"id":"nt1","tier":"naughty","minProgress":0.2,"text":"What's one thing you want me to do to you tonight that you've never actually asked for?"},{"id":"nt2","tier":"naughty","minProgress":0.2,"text":"Describe, in detail, the way you like to be touched when you're already turned on."},{"id":"nt3","tier":"naughty","minProgress":0.2,"text":"What's your favorite position with me, and what exactly makes it your favorite?"},{"id":"nt4","tier":"naughty","minProgress":0.2,"text":"What's the hottest thing I've ever said to you in bed? Say it back to me."},{"id":"nt5","tier":"naughty","minProgress":0.2,"text":"Where on your body do you most want my mouth, in order, top three?"},{"id":"nt6","tier":"naughty","minProgress":0.2,"text":"What's a fantasy about us that you've had and never told me?"},{"id":"nt7","tier":"naughty","minProgress":0.3,"text":"Tell me one thing you'd want me to do to you if you knew I'd say yes to anything tonight."},{"id":"nt8","tier":"naughty","minProgress":0.3,"text":"Do you prefer slow and teasing or fast and urgent? Describe a night of each with me."},{"id":"nt9","tier":"naughty","minProgress":0.3,"text":"What do you think about when you touch yourself and I'm not there?"},{"id":"nt10","tier":"naughty","minProgress":0.3,"text":"What's one thing you'd like to try that you think I might hesitate on? Pitch it to me."},{"id":"nt11","tier":"naughty","minProgress":0.3,"text":"What sound or reaction from me turns you on the most? Then show me."},{"id":"nt12","tier":"naughty","minProgress":0.4,"text":"When was the last time you were turned on by me in public and had to hide it? What happened?"},{"id":"nt13","tier":"naughty","minProgress":0.4,"text":"Do you like being in control or being controlled more? Give me an example from us."},{"id":"nt14","tier":"naughty","minProgress":0.4,"text":"What's the best orgasm I've ever given you? Walk me through it."},{"id":"nt15","tier":"naughty","minProgress":0.4,"text":"If we had a whole hotel room to ourselves tomorrow afternoon, describe exactly how you'd spend the first 20 minutes."},{"id":"nt16","tier":"naughty","minProgress":0.5,"text":"What's something you want me to say to you during sex that I never say? Teach me the words."},{"id":"nt17","tier":"naughty","minProgress":0.5,"text":"What's one toy, prop or piece of lingerie you'd want us to buy after this trip?"},{"id":"nt18","tier":"naughty","minProgress":0.5,"text":"Describe the way you want me to wake you up one morning. Leave nothing out."},{"id":"nt19","tier":"naughty","minProgress":0.5,"text":"Which part of my body would you spend the longest on if I let you do whatever you wanted? Then show me."},{"id":"nt20","tier":"naughty","minProgress":0.6,"text":"What's the dirtiest thought you had about me today, and when did you have it?"},{"id":"nt21","tier":"naughty","minProgress":0.6,"text":"Is there anything we used to do early on that you miss? Ask for it now."},{"id":"nt22","tier":"naughty","minProgress":0.6,"text":"What's one boundary you'd be curious to push a little with me, and how slowly would you want to go?"},{"id":"nt23","tier":"naughty","minProgress":0.6,"text":"Describe how you'd want me to undress you, piece by piece, including what I say while I do it."},{"id":"nt24","tier":"naughty","minProgress":0.7,"text":"Tell me exactly how you'd want me to finish you tonight."},{"id":"nt25","tier":"naughty","minProgress":0.7,"text":"What's a fantasy you'd only want to play out on a vacation, away from real life?"},{"id":"nt26","tier":"naughty","minProgress":0.7,"text":"What's one thing I do in bed that you'd never want me to stop doing? One thing you'd tweak?"},{"id":"nt27","tier":"naughty","minProgress":0.8,"text":"If you could give me one instruction I had to follow for the next ten minutes, what would it be?"},{"id":"nt28","tier":"naughty","minProgress":0.8,"text":"What's your ultimate night with me? Setting, outfit, pace, every step to the end."},{"id":"nt29","tier":"naughty","minProgress":0.8,"text":"What have you learned about what turns me on this week that you didn't know before?"},{"id":"nt30","tier":"naughty","minProgress":0.8,"text":"What's the one thing from this week you want us to keep doing once we're home?"}],"day":[{"id":"fd1","tier":"flirty","minProgress":0,"codeWord":"Pineapple","text":"Work the word \"pineapple\" into a family conversation today. When you say it, your partner has to touch your knee or hand within 10 seconds."},{"id":"fd2","tier":"flirty","minProgress":0,"text":"Give your partner a slow, deliberate sunscreen application. Back, shoulders, the back of the legs. Make it last."},{"id":"fd3","tier":"flirty","minProgress":0,"text":"Hide a short handwritten note in your partner's beach bag, wallet or pocket saying what you want later. Don't tell them it's there."},{"id":"fd4","tier":"flirty","minProgress":0,"text":"Lock eyes across the pool or beach and hold it for a full 5 seconds without smiling. Then wink."},{"id":"fd5","tier":"flirty","minProgress":0,"text":"Hold your partner's hand under the table for an entire meal. Squeeze three times when you're thinking about tonight."},{"id":"fd6","tier":"flirty","minProgress":0,"text":"Order for your partner at lunch or dinner without asking them. Pick something you think they'll love."},{"id":"fd7","tier":"flirty","minProgress":0,"text":"Kiss your partner like you mean it, at least 5 seconds, somewhere you haven't kissed on this trip yet. Kids looking away counts."},{"id":"fd8","tier":"flirty","minProgress":0,"text":"Text your partner one thing you find irresistible about them while you're both in the same room."},{"id":"fd9","tier":"flirty","minProgress":0,"text":"Take a photo of your partner when they don't know it, the one where they look best today. Show it to them later."},{"id":"fd10","tier":"flirty","minProgress":0,"text":"Walk the beach together for 10 minutes, just the two of you. Tell them three things you still love about them."},{"id":"fd11","tier":"flirty","minProgress":0,"codeWord":"Seashell","text":"Pick up a shell or small stone and give it to your partner with no explanation. It's a token: they can trade it in tonight for one kiss anywhere they choose."},{"id":"fd12","tier":"flirty","minProgress":0,"text":"Brush against your partner \"accidentally\" three times today in a way only they would notice."},{"id":"fd13","tier":"flirty","minProgress":0,"text":"Pick your partner's outfit for dinner tonight. They have to wear it."},{"id":"fd14","tier":"flirty","minProgress":0,"text":"Make your partner a drink or snack without being asked and hand it over with a whispered \"for later\"."},{"id":"fd15","tier":"flirty","minProgress":0,"text":"Slow dance with your partner for one song, anywhere, even the kitchen. Kids rolling their eyes is a bonus."},{"id":"fd16","tier":"flirty","minProgress":0,"text":"Play footsie under the table during a meal until your partner gives you a look."},{"id":"fd17","tier":"flirty","minProgress":0,"text":"Change your partner's contact name in your phone to something flattering and show them."},{"id":"fd18","tier":"flirty","minProgress":0,"text":"Give your partner a 2-minute shoulder rub while everyone's watching TV or reading."},{"id":"fd19","tier":"flirty","minProgress":0,"text":"Tell your partner a memory of them from the day you met. Every detail you can remember."},{"id":"fd20","tier":"flirty","minProgress":0,"text":"Pick a song that reminds you of your partner and send it to them with no message."},{"id":"td1","tier":"teasing","minProgress":0.3,"codeWord":"Riptide report","text":"Lean in and whisper one specific thing you plan to do to your partner tonight, where no one else can hear. Then walk away like nothing happened."},{"id":"td2","tier":"teasing","minProgress":0.3,"text":"Send your partner a suggestive text during a family activity. They have to keep a straight face."},{"id":"td3","tier":"teasing","minProgress":0.3,"codeWord":"Need a towel","text":"Say \"I need a towel from the room\" and get your partner to come with you. Five minutes of kissing behind a locked door, then back out."},{"id":"td4","tier":"teasing","minProgress":0.3,"text":"Let your partner pick what you wear under your clothes today. Only they know."},{"id":"td5","tier":"teasing","minProgress":0.3,"text":"Send your partner a photo that's flirty but PG-13 from wherever you are. Delete it from the shared album if you have one."},{"id":"td6","tier":"teasing","minProgress":0.3,"text":"While walking behind your partner, put your hand somewhere that makes them jump. Somewhere no one can see."},{"id":"td7","tier":"teasing","minProgress":0.3,"text":"Describe tonight's plan to your partner in a text using only emojis. They have to guess it later."},{"id":"td8","tier":"teasing","minProgress":0.3,"text":"Sit close enough at dinner that your thighs touch the whole meal. Trace a slow line with one finger at some point."},{"id":"td9","tier":"teasing","minProgress":0.3,"text":"Kiss your partner's neck when no one's looking, just below the ear, for three full seconds."},{"id":"td10","tier":"teasing","minProgress":0.3,"codeWord":"Low tide","text":"Pick a code phrase for \"I want you right now\" and use it in front of the family at least twice today."},{"id":"td11","tier":"teasing","minProgress":0.3,"text":"Shower or change in front of your partner today slowly, while they have to keep getting ready."},{"id":"td12","tier":"teasing","minProgress":0.3,"text":"Text your partner a 1-to-10 rating of how much you want them every hour for the afternoon."},{"id":"td13","tier":"teasing","minProgress":0.3,"text":"Kiss your partner in the pool or ocean like you're alone. Underwater hands stay discreet."},{"id":"td14","tier":"teasing","minProgress":0.3,"text":"Write tonight's first move on a slip of paper, fold it, and give it to your partner. They can't open it until the door is locked."},{"id":"td15","tier":"teasing","minProgress":0.3,"text":"Tell your partner the one piece of clothing you want them to take off first tonight, then don't mention it again all day."},{"id":"td16","tier":"teasing","minProgress":0.3,"text":"During nap or screen time, pull your partner into the bedroom for a 10-minute make-out. Clothes stay on. Mostly."},{"id":"td17","tier":"teasing","minProgress":0.3,"text":"Send a voice memo of you whispering what you're thinking about. Listen with headphones only."},{"id":"td18","tier":"teasing","minProgress":0.3,"text":"Squeeze your partner's backside once when no one is looking. Get away with it."},{"id":"td19","tier":"teasing","minProgress":0.3,"text":"Pick the most attractive photo of your partner from today and text it to them with what you'd do to them in it."},{"id":"td20","tier":"teasing","minProgress":0.3,"text":"Lick your lips and look at your partner across the table until they look away first."}],"night":[{"id":"tn1","tier":"teasing","minProgress":0,"text":"Give your partner a 10-minute full back massage, skin to skin. Your hands can wander but you can't go further than they invite."},{"id":"tn2","tier":"teasing","minProgress":0,"text":"Make out with your partner for 10 minutes with the lights off. No hands below the waist until the timer ends."},{"id":"tn3","tier":"teasing","minProgress":0,"text":"Undress your partner slowly, one piece at a time, kissing each patch of skin you uncover."},{"id":"tn4","tier":"teasing","minProgress":0,"text":"Lie still while your partner kisses anywhere they want for 5 minutes. You can't touch them back."},{"id":"tn5","tier":"teasing","minProgress":0,"text":"Whisper three things you want to do to your partner later this week, in detail, with your lips on their ear."},{"id":"tn6","tier":"teasing","minProgress":0,"text":"Shower together. Wash each other completely, slowly, and don't let it go further until you're dry."},{"id":"nn1","tier":"naughty","minProgress":0.2,"text":"Blindfold your partner with a sleep mask or T-shirt. For 10 minutes, kiss and touch them anywhere, slowly. They guess where you'll go next."},{"id":"nn2","tier":"naughty","minProgress":0.2,"text":"Give your partner a full-body oil or lotion massage that ends between their legs. Take your time getting there."},{"id":"nn3","tier":"naughty","minProgress":0.2,"text":"Your partner lies back. Use only your mouth on them for 5 minutes. No hands allowed."},{"id":"nn4","tier":"naughty","minProgress":0.2,"text":"Strip for your partner to a song of their choosing. Headphones in one ear each to keep it quiet."},{"id":"nn5","tier":"naughty","minProgress":0.2,"text":"Tell your partner exactly how to touch you, step by step, and they have to follow your directions precisely."},{"id":"nn6","tier":"naughty","minProgress":0.3,"text":"Bring your partner close to the edge with your hands, then stop. Do it three times before you let them finish."},{"id":"nn7","tier":"naughty","minProgress":0.3,"text":"Go down on your partner until they finish. They pick the position."},{"id":"nn8","tier":"naughty","minProgress":0.3,"text":"Use an ice cube from the ice bucket. Trace it from their lips down their body, following with your mouth."},{"id":"nn9","tier":"naughty","minProgress":0.3,"text":"Ride or be ridden, your choice, but go painfully slow for the first five minutes. Whoever speeds up first loses a point."},{"id":"nn10","tier":"naughty","minProgress":0.3,"text":"Have sex standing up, against the wall or the bathroom counter. Keep it quiet."},{"id":"nn11","tier":"naughty","minProgress":0.4,"text":"Your partner is in full control for 15 minutes. They tell you what to do, where and how. You say yes or the safe word."},{"id":"nn12","tier":"naughty","minProgress":0.4,"text":"Pin your partner's wrists above their head and keep them there the entire time. They aren't allowed to move them."},{"id":"nn13","tier":"naughty","minProgress":0.4,"text":"Touch yourself in front of your partner while they watch from across the room. They can't join until you say so."},{"id":"nn14","tier":"naughty","minProgress":0.4,"text":"Try a position you haven't done in at least a year. Partner picks."},{"id":"nn15","tier":"naughty","minProgress":0.4,"text":"Sixty-nine for at least five minutes. Whoever pulls away first owes the other a finish of their choice."},{"id":"nn16","tier":"naughty","minProgress":0.5,"text":"Have sex in front of the mirror. Keep eye contact with your partner's reflection the whole time."},{"id":"nn17","tier":"naughty","minProgress":0.5,"text":"Narrate exactly what you're about to do to your partner, out loud in a whisper, before you do each thing."},{"id":"nn18","tier":"naughty","minProgress":0.5,"text":"Your partner stays fully dressed while you're completely naked. They undress only when you beg."},{"id":"nn19","tier":"naughty","minProgress":0.5,"text":"Shower sex. Quiet, with the fan on. Start with washing each other and see how long you last before it turns."},{"id":"nn20","tier":"naughty","minProgress":0.5,"text":"Use your partner's answer from today's truth as tonight's instructions. Do exactly what they said they wanted."},{"id":"nn21","tier":"naughty","minProgress":0.6,"text":"Tie your partner's hands loosely with a belt, scarf or swimsuit tie. Then take your time with them."},{"id":"nn22","tier":"naughty","minProgress":0.6,"text":"From behind, slow and deep, with your mouth at their ear telling them what you like about them."},{"id":"nn23","tier":"naughty","minProgress":0.6,"text":"Your partner gets two orgasms before you get one. Hands, mouth, anything that works."},{"id":"nn24","tier":"naughty","minProgress":0.6,"text":"Act out a fantasy from one of this week's truth answers, as close as you can get with what's in the room."},{"id":"nn25","tier":"naughty","minProgress":0.6,"text":"Wake your partner up in the middle of the night or early morning with your mouth. Set an alarm if you have to."},{"id":"nn26","tier":"naughty","minProgress":0.7,"text":"Edge each other for 20 minutes. Neither of you finishes until the timer goes off, then race to the end together."},{"id":"nn27","tier":"naughty","minProgress":0.7,"text":"Blindfold yourself this time. Your partner decides everything, positions included. You only get to say yes, no or more."},{"id":"nn28","tier":"naughty","minProgress":0.7,"text":"Lights low, curtains fully closed: have sex somewhere in the room other than the bed. Chair, counter, floor, your pick."},{"id":"nn29","tier":"naughty","minProgress":0.7,"text":"Three positions, three minutes each, your partner picks the order. Finish in the fourth, your pick."},{"id":"nn30","tier":"naughty","minProgress":0.7,"text":"Talk dirty the entire time. No silence allowed. If you run out of things to say, start describing what you see."},{"id":"nn31","tier":"naughty","minProgress":0.8,"text":"Recreate the best night you two ever had, as closely as you can remember it. Talk through what happened as you go."},{"id":"nn32","tier":"naughty","minProgress":0.8,"text":"Your partner names one thing they've never asked you for. Do it tonight, or offer the closest thing you're comfortable with."},{"id":"nn33","tier":"naughty","minProgress":0.8,"text":"Full night, no clock. Start with a massage, then mouth, then whatever comes next. Nobody's allowed to rush."},{"id":"nn34","tier":"naughty","minProgress":0.8,"text":"Use every surface in the room you can stay quiet on. Bed, chair, counter, floor. At least three."},{"id":"nn35","tier":"naughty","minProgress":0.8,"text":"Look your partner in the eyes the entire time, lights on. Tell them what you want from them until the very end."}],"quick":[{"id":"qn1","tier":"naughty","minProgress":0,"text":"Packing break: lock the door, 10 minutes, clothes optional. Then back to the suitcases like nothing happened."},{"id":"qn2","tier":"naughty","minProgress":0,"text":"Quick shower together before bed. Hands only. Make it count."},{"id":"qn3","tier":"naughty","minProgress":0,"text":"Lights off, under the covers, no talking. Whoever starts it has to finish their partner first."},{"id":"qn4","tier":"naughty","minProgress":0,"text":"Five minutes of your mouth on your partner, wherever they want it. Then sleep. Early flight."},{"id":"qn5","tier":"naughty","minProgress":0,"text":"Fall asleep spooning naked. Wake up 10 minutes before the alarm and use them well."},{"id":"qn6","tier":"naughty","minProgress":0,"text":"Pack one piece of your partner's favorite lingerie or underwear in their carry-on with a note: \"First night home.\" Then a fast, quiet goodnight."}],"forfeit":[{"id":"ff1","tier":"forfeit","text":"Do your partner's least favorite chore for the rest of the trip."},{"id":"ff2","tier":"forfeit","text":"Say \"you look amazing today\" to your partner at breakfast in a terrible fake accent."},{"id":"ff3","tier":"forfeit","text":"Carry everything to and from the beach tomorrow. No complaining."},{"id":"ff4","tier":"forfeit","text":"Your partner picks your next swimsuit or outfit. No vetoes."},{"id":"ff5","tier":"forfeit","text":"Give your partner a 15-minute foot rub tonight. They choose the lotion."},{"id":"ff6","tier":"forfeit","text":"Your partner gets to sleep in tomorrow. You handle the kids' morning."},{"id":"ff7","tier":"forfeit","text":"Write your partner a love note of at least five sentences and read it to them tonight."},{"id":"ff8","tier":"forfeit","text":"Use the word \"scrumptious\" three times at dinner with a straight face."},{"id":"ff9","tier":"forfeit","text":"Your partner picks tomorrow's lunch spot and what you order."},{"id":"ff10","tier":"forfeit","text":"Make the morning coffee or breakfast and serve it in bed."},{"id":"ff11","tier":"forfeit","text":"You're on bath and bedtime duty for the kids tonight, solo."},{"id":"ff12","tier":"forfeit","text":"Your partner can call one dare on you tomorrow at any time, and you can't skip it."}],"wild":[{"id":"wc1","self":3,"partner":-3,"text":"Steal: take 3 points from your partner."},{"id":"wc2","self":3,"partner":0,"text":"Bonus: you earn 3 free points. Rub it in."},{"id":"wc3","self":2,"partner":0,"text":"Command: tell your partner one thing to do for you in the next hour. They do it, you get 2 points."},{"id":"wc4","self":1,"partner":0,"text":"Veto: cancel one of your partner's dares tomorrow and pick a replacement from your own head. You get 1 point now."},{"id":"wc5","self":2,"partner":0,"text":"You choose: you get to write your partner's night dare for tomorrow using \"Write a card\". 2 points."},{"id":"wc6","self":2,"partner":2,"text":"Truce: you both get 2 points. Spend them on 10 minutes of making out right now."},{"id":"wc7","self":3,"partner":-1,"text":"Raid: take 1 point from your partner and get 2 more for free."},{"id":"wc8","self":2,"partner":0,"text":"Sneak attack: claim one kiss anywhere, any time tomorrow, no matter who's around (PG only). 2 points."}],"coupon":[{"id":"cp1","text":"One 30-minute massage, redeemable any night"},{"id":"cp2","text":"Breakfast in bed"},{"id":"cp3","text":"Chore pass at home: skip one chore of your choice"},{"id":"cp4","text":"Your partner plans and books the next date night"},{"id":"cp5","text":"Sleep in. Your partner handles the morning."},{"id":"cp6","text":"Pick the movie or show, no arguments"},{"id":"cp7","text":"One \"yes\" to a request in bed, within your comfort zone"},{"id":"cp8","text":"Bath or shower drawn for you, with company if you want it"},{"id":"cp9","text":"Kid-free afternoon for you at home"},{"id":"cp10","text":"Your partner buys you one outfit of their choosing for you"},{"id":"cp11","text":"One full night where you're in charge, start to finish"},{"id":"cp12","text":"Your favorite takeout, ordered and picked up by your partner"}],"winnersChoice":["A full hour where you are in charge. Your partner says yes to everything within your limits.","A slow night: bath or shower, full-body massage, then whatever you ask for.","Your partner acts out the fantasy from your favorite truth answer this week.","Pick any two night dares from this week and do them both again, your way.","Write your own night. Type the plan below."]};</script>
+<script>
+(() => {
+"use strict";
+
+/* ================= utilities ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+async function sha(s) {
+  try { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("ptl:" + s)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join(""); }
+  catch { return "f" + hashStr("ptl:" + s).toString(16); }
+}
+function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function parseYmd(s) { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); }
+function today() { const dbg = LS.get("ptl_debug_today", null); return dbg ? parseYmd(dbg) : parseYmd(ymd(new Date())); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+const fmtDate = (d) => d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+const PLAYERS = { coral: "Coral", riptide: "Riptide" };
+const other = (p) => (p === "coral" ? "riptide" : "coral");
+const TIER_LABEL = { flirty: "Flirty", teasing: "Teasing", naughty: "Naughty" };
+
+/* ================= decoy ================= */
+const DEFAULT_ITEMS = ["Sunscreen SPF 50", "Beach towels", "Phone chargers", "Kids' swim goggles", "Snacks for the drive", "Aloe vera", "Hats", "Flip-flops", "Card games for rainy day", "Ziploc bags"];
+let items = LS.get("ptl_items", null) || DEFAULT_ITEMS.map((t) => ({ t, d: false }));
+function saveItems() { LS.set("ptl_items", items); }
+function renderDecoy() {
+  const ul = $("#d-list");
+  ul.innerHTML = items.map((it, i) => `<li class="${it.d ? "done" : ""}"><input type="checkbox" id="it${i}" data-i="${i}" ${it.d ? "checked" : ""}><span>${esc(it.t)}</span><button class="x" data-del="${i}" aria-label="Remove">×</button></li>`).join("");
+  const left = items.filter((x) => !x.d).length;
+  $("#d-count").textContent = left ? `${left} of ${items.length} still to pack` : "All packed.";
+}
+$("#d-list").addEventListener("change", (e) => { const i = e.target.dataset.i; if (i != null) { items[i].d = e.target.checked; saveItems(); renderDecoy(); } });
+$("#d-list").addEventListener("click", (e) => { const i = e.target.dataset.del; if (i != null) { items.splice(+i, 1); saveItems(); renderDecoy(); } });
+$("#d-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const inp = $("#d-input"); const v = inp.value.trim(); if (!v) return;
+  const pinHash = LS.get("ptl_pin", null);
+  if (v === "##" && !pinHash) { inp.value = ""; showPinSetup(); return; }
+  if (pinHash && /^\d{4,8}$/.test(v) && (await sha(v)) === pinHash) { inp.value = ""; unlock(); return; }
+  items.push({ t: v, d: false }); saveItems(); inp.value = ""; renderDecoy();
+});
+function showPinSetup(msg) { $("#d-pin").hidden = false; $("#d-pin-msg").textContent = msg || "Choose a PIN (4–8 digits)."; $("#d-pin-a").value = ""; $("#d-pin-b").value = ""; $("#d-pin-a").focus(); }
+$("#d-pin-cancel").addEventListener("click", () => { $("#d-pin").hidden = true; });
+$("#d-pin-save").addEventListener("click", async () => {
+  const a = $("#d-pin-a").value, b = $("#d-pin-b").value;
+  if (!/^\d{4,8}$/.test(a)) { $("#d-pin-msg").textContent = "Use 4 to 8 digits."; return; }
+  if (a !== b) { $("#d-pin-msg").textContent = "The two PINs don't match. Try again."; return; }
+  LS.set("ptl_pin", await sha(a)); $("#d-pin").hidden = true; unlock();
+});
+$("#d-icon").addEventListener("click", () => {});
+
+/* ================= lock / unlock ================= */
+let unlocked = false, idleTimer = null;
+const IDLE_MS = 120000;
+function bumpIdle() { if (!unlocked) return; clearTimeout(idleTimer); idleTimer = setTimeout(lock, IDLE_MS); }
+function unlock() {
+  unlocked = true; document.body.classList.add("in-game");
+  $("#decoy").hidden = true; $("#game").hidden = false; bumpIdle(); render();
+}
+function lock() {
+  unlocked = false; clearTimeout(idleTimer);
+  const g = $("#game"); g.innerHTML = ""; g.hidden = true;
+  document.body.classList.remove("in-game"); $("#decoy").hidden = false; $("#d-pin").hidden = true;
+  renderDecoy(); window.scrollTo(0, 0);
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden && unlocked) lock(); });
+["pointerdown", "keydown", "scroll", "touchstart"].forEach((ev) => document.addEventListener(ev, bumpIdle, { passive: true }));
+
+/* ================= store (db or local) ================= */
+const cache = { state: null, plays: {}, custom: {}, wallet: {} };
+let db = null, uid = null, mode = "connecting";
+const writeChains = {};
+function persistLocal() { LS.set("ptl_local", { state: cache.state, plays: cache.plays, custom: cache.custom, wallet: cache.wallet }); }
+function loadLocal() { const l = LS.get("ptl_local", null); if (l) Object.assign(cache, { state: l.state || null, plays: l.plays || {}, custom: l.custom || {}, wallet: l.wallet || {} }); }
+function putDoc(col, id, data) {
+  // col: "game" (id "state"), "plays", "custom", "wallet"
+  if (col === "game") cache.state = data; else cache[col][id] = data;
+  if (mode !== "db") { persistLocal(); render(); return Promise.resolve(); }
+  const path = col + "/" + id;
+  const run = () => db.doc(path).set(data).catch((e) => { toast(e && e.code === "quota_exceeded" ? "Storage is full." : "Couldn't save. Check your connection and try again."); });
+  writeChains[path] = (writeChains[path] || Promise.resolve()).then(run);
+  render(); return writeChains[path];
+}
+function delDoc(col, id) {
+  delete cache[col][id];
+  if (mode !== "db") { persistLocal(); render(); return; }
+  db.doc(col + "/" + id).delete().catch(() => toast("Couldn't delete. Try again."));
+  render();
+}
+function subscribeAll() {
+  db.doc("game/state").onSnapshot((s) => { cache.state = s.exists ? s.data() : null; render(); }, onDbErr);
+  ["plays", "custom", "wallet"].forEach((col) => {
+    db.collection(col).onSnapshot((qs) => { const m = {}; qs.docs.forEach((d) => { m[d.id] = d.data(); }); cache[col] = m; render(); }, onDbErr);
+  });
+}
+function onDbErr() { mode = "local-fallback"; loadLocal(); render(); }
+async function initStore() {
+  const c = window.claude;
+  if (!c || typeof c.use !== "function") { mode = "local"; loadLocal(); render(); return; }
+  try {
+    const [d, u] = await Promise.all([c.use("db"), c.use("user")]);
+    if (u) { try { uid = await u.id(); } catch { uid = null; } }
+    if (d) { db = d; mode = "db"; subscribeAll(); } else { mode = "local"; loadLocal(); }
+  } catch { mode = "local"; loadLocal(); }
+  render();
+}
+
+/* ================= game model ================= */
+const DEFAULT_POINTS = { flirty: 1, teasing: 2, naughty: 3, custom: 1, skip: -2 };
+function defaultState() {
+  return { startDate: ymd(today()), days: 6, wcNight: 5, lightFinal: true, partialFirst: true,
+    slots: { truth: true, day: true, night: true, pillow: true }, points: { ...DEFAULT_POINTS }, claims: {}, epoch: 1 };
+}
+const S = () => cache.state;
+function me() {
+  const st = S(); if (!st) return null;
+  if (uid && st.claims) { for (const p of ["coral", "riptide"]) if (st.claims[p] === uid) return p; }
+  if (mode === "db" && uid) return null;
+  const lp = LS.get("ptl_player", null); return lp && PLAYERS[lp] ? lp : null;
+}
+function dayNum(st) { return Math.floor((today() - parseYmd(st.startDate)) / 864e5) + 1; }
+function progress(st, d) { return st.days > 1 ? Math.min(1, Math.max(0, (d - 1) / (st.days - 1))) : 1; }
+function isWC(st, d) { return +st.wcNight > 0 && +st.wcNight <= st.days && d === +st.wcNight; }
+function isLightFinal(st, d) { return st.lightFinal && d === st.days && !isWC(st, d); }
+
+function slotsFor(st, d) {
+  const p = progress(st, d), out = [];
+  const tTier = p < 0.2 ? "flirty" : p < 0.4 ? "teasing" : "naughty";
+  if (st.slots.truth) out.push({ key: "truth", kind: "truth", name: d === 1 && st.partialFirst ? "Afternoon truth" : "Morning truth", tier: tTier, pool: "truth" });
+  if (st.slots.day) out.push({ key: "day", kind: "day", name: "Daytime dare", tier: p < 0.4 ? "flirty" : "teasing", pool: "day" });
+  if (st.slots.night) {
+    if (isWC(st, d)) out.push({ key: "night", kind: "wc", name: "Winner's Choice night", tier: "naughty", pool: "wc" });
+    else if (isLightFinal(st, d)) out.push({ key: "night", kind: "night", name: "Last-night quickie", tier: "naughty", pool: "quick" });
+    else out.push({ key: "night", kind: "night", name: "Night dare", tier: p < 0.2 ? "teasing" : "naughty", pool: "night" });
+  }
+  if (st.slots.pillow && d >= 2) out.push({ key: "pillow", kind: "truth", name: "Pillow talk truth", tier: "naughty", pool: "truth" });
+  return out;
+}
+const playId = (st, pl, d) => `e${st.epoch}_${pl}_d${d}`;
+function playOf(st, pl, d) { return cache.plays[playId(st, pl, d)] || null; }
+function epochPlays(st) { return Object.values(cache.plays).filter((x) => x && x.epoch === st.epoch); }
+function usedIds(st) {
+  const s = new Set();
+  epochPlays(st).forEach((pl) => { Object.values(pl.slots || {}).forEach((x) => { if (x.cardId) s.add(x.cardId); if (x.forfeitId) s.add(x.forfeitId); (x.prev || []).forEach((y) => s.add(y)); }); if (pl.wild && pl.wild.cardId) s.add(pl.wild.cardId); });
+  return s;
+}
+const ALL = {};
+["truth", "day", "night", "quick", "forfeit", "wild", "coupon"].forEach((k) => DECK[k].forEach((c) => { ALL[c.id] = { ...c, pool: k }; }));
+function cardById(id) {
+  if (!id) return null;
+  if (id.startsWith("custom:")) { const c = cache.custom[id.slice(7)]; return c ? { id, tier: c.tier, text: c.text, custom: true, author: c.author } : { id, tier: "teasing", text: "(This card was deleted.)", custom: true }; }
+  if (id === "wc:choice") return { id, tier: "naughty", text: "You're in the lead. Tonight is your pick. Choose how the night goes:" , wc: "choice" };
+  if (id === "wc:yes") return { id, tier: "naughty", text: "Your partner is in the lead, so tonight is theirs. Your dare: say yes to their Winner's Choice pick, within your limits. Their pick shows on the Scores tab.", wc: "yes" };
+  if (id === "wc:tie") return { id, tier: "naughty", text: "You're tied. You each get to choose one thing about tonight. Pick yours:", wc: "choice" };
+  return ALL[id] || null;
+}
+function seededOrder(list, seed) { return list.slice().sort((a, b) => hashStr(seed + a.id) - hashStr(seed + b.id)); }
+
+function pickCard(st, pl, d, slot, exclude) {
+  const used = usedIds(st); if (exclude) used.add(exclude);
+  const p = progress(st, d);
+  // partner-written cards first
+  const kindFor = slot.pool === "truth" ? "truth" : slot.pool === "day" ? "day" : "night";
+  const customs = Object.entries(cache.custom).filter(([id, c]) => c && c.target === pl && c.kind === kindFor && c.usedEpoch !== st.epoch && !used.has("custom:" + id))
+    .sort((a, b) => (a[1].created || 0) - (b[1].created || 0));
+  if (customs.length) return { cardId: "custom:" + customs[0][0], customId: customs[0][0] };
+  const pool = DECK[slot.pool].filter((c) => c.tier === slot.tier);
+  const seed = st.startDate + pl + st.epoch;
+  let el = pool.filter((c) => !used.has(c.id) && (c.minProgress || 0) <= p + 1e-9);
+  if (!el.length) el = pool.filter((c) => !used.has(c.id));
+  if (!el.length) el = pool.filter((c) => c.id !== exclude); // pool exhausted: reuse
+  if (!el.length) el = pool;
+  el = seededOrder(el, seed + d + slot.key).sort((a, b) => (b.minProgress || 0) - (a.minProgress || 0));
+  return { cardId: el[0].id };
+}
+function pickFrom(st, poolName, seedExtra) {
+  const used = usedIds(st);
+  let el = DECK[poolName].filter((c) => !used.has(c.id)); if (!el.length) el = DECK[poolName];
+  return seededOrder(el, st.startDate + st.epoch + seedExtra)[0].id;
+}
+
+function slotPoints(st, sl) {
+  const pts = st.points || DEFAULT_POINTS;
+  if (sl.status === "skipped") return pts.skip;
+  if (sl.status !== "done") return 0;
+  const c = cardById(sl.cardId); if (!c) return 0;
+  return (pts[c.tier] || 0) + (c.custom ? pts.custom : 0);
+}
+function scoreOf(st, pl, opts = {}) {
+  let net = 0, gross = 0;
+  epochPlays(st).forEach((x) => {
+    Object.entries(x.slots || {}).forEach(([k, sl]) => {
+      if (x.player !== pl) return;
+      if (opts.excludeDay && x.day === opts.excludeDay && k === "night") return;
+      const v = slotPoints(st, sl); net += v; if (v > 0) gross += v;
+    });
+    if (x.wild && x.wild.played) {
+      const w = ALL[x.wild.cardId]; if (!w) return;
+      if (x.player === pl) { net += w.self; if (w.self > 0) gross += w.self; }
+      else net += w.partner;
+    }
+  });
+  return { net, gross };
+}
+function leaderFor(st, d) {
+  const a = scoreOf(st, "coral", { excludeDay: d }).net, b = scoreOf(st, "riptide", { excludeDay: d }).net;
+  return a === b ? "tie" : a > b ? "coral" : "riptide";
+}
+
+/* ================= UI state ================= */
+let tab = LS.get("ptl_tab", "today");
+let revealed = new Set();
+let pendingConfirm = null;
+let toastTimer = null;
+function toast(msg) {
+  let t = $("#toast"); if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+  t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
+}
+
+/* ================= render ================= */
+function render() {
+  if (!unlocked) return;
+  const g = $("#game");
+  const keep = captureInputs(g);
+  const st = S();
+  let body;
+  if (mode === "connecting") body = `<div class="hero"><h2>Tide &amp; Tell</h2><p class="note">Connecting…</p></div>`;
+  else if (!st) body = viewSetup(true);
+  else if (!me()) body = viewPick(st);
+  else body = viewTab(st);
+  g.innerHTML = header(st) + body + (st && me() ? tabsBar() : "");
+  restoreInputs(g, keep);
+}
+function captureInputs(g) { const m = {}; g.querySelectorAll("textarea[id],input[id]:not([type=checkbox]):not([type=radio])").forEach((el) => { m[el.id] = el.value; }); return m; }
+function restoreInputs(g, m) { Object.entries(m).forEach(([id, v]) => { const el = g.querySelector("#" + CSS.escape(id)); if (el && v && !el.dataset.fresh) el.value = v; }); }
+function header(st) {
+  const p = st && me();
+  const syncNote = mode === "db" ? "" : mode === "connecting" ? "" : `<div class="sync warn">Not syncing: this phone only. Scores won't reach your partner.</div>`;
+  return `<div class="g-head"><h1>Tide &amp; Tell</h1>${p ? `<div class="who">playing as<b>${PLAYERS[p]}</b></div>` : ""}<button class="lockbtn" data-act="lock" type="button" aria-label="Lock">Lock</button></div>${syncNote}`;
+}
+function tabsBar() {
+  const t = [["today", "Today"], ["scores", "Scores"], ["wallet", "Wallet"], ["write", "Write"], ["settings", "Setup"]];
+  return `<nav class="tabs" aria-label="Sections">${t.map(([k, l]) => `<button type="button" data-tab="${k}" aria-current="${tab === k}">${l}</button>`).join("")}</nav>`;
+}
+function viewTab(st) {
+  if (tab === "scores") return viewScores(st);
+  if (tab === "wallet") return viewWallet(st);
+  if (tab === "write") return viewWrite(st);
+  if (tab === "settings") return viewSetup(false);
+  return viewToday(st);
+}
+function viewPick(st) {
+  const c = st.claims || {};
+  const taken = (p) => uid && c[p] && c[p] !== uid;
+  return `<div class="hero"><h2>Who's holding this phone?</h2><p class="note">Pick your code name. Your partner picks the other one on their phone.</p></div>
+  <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ${taken(p) ? "disabled" : ""}><b>${PLAYERS[p]}</b><span>${taken(p) ? "Taken" : "Play as " + PLAYERS[p]}</span></button>`).join("")}</div>`;
+}
+
+function tideBar(st, d) {
+  let s = ""; for (let i = 1; i <= st.days; i++) s += `<i class="${i < d ? "past" : i === d ? "now" : ""} ${isWC(st, i) ? "wc" : ""}" title="Day ${i}"></i>`;
+  return `<div class="tide" aria-hidden="true">${s}</div>`;
+}
+function viewToday(st) {
+  const d = dayNum(st), pl = me(), start = parseYmd(st.startDate);
+  if (d < 1) return `<div class="dayline"><h2>Not yet</h2></div>${tideBar(st, 0)}<p class="note">The game starts ${esc(fmtDate(start))}. You can write cards for your partner in the meantime.</p>`;
+  if (d > st.days) return finalView(st);
+  const play = playOf(st, pl, d) || { player: pl, day: d, epoch: st.epoch, slots: {} };
+  const slots = slotsFor(st, d);
+  const partner = other(pl), pplay = playOf(st, partner, d), pslots = slots.length;
+  const pdone = pplay ? Object.values(pplay.slots || {}).filter((x) => x.status === "done" || x.status === "skipped").length : 0;
+  let intro = "";
+  if (isWC(st, d)) { const L = leaderFor(st, d); intro = `<p class="note">Winner's Choice night. ${L === "tie" ? "You're tied going in, so you each choose one thing." : `${PLAYERS[L]} is in the lead and picks tonight.`}</p>`; }
+  else if (isLightFinal(st, d)) intro = `<p class="note">Last night: packing, early alarm. Tonight's dare is short and quiet. Scores lock at midnight.</p>`;
+  const allResolved = slots.every((s) => { const x = play.slots[s.key]; return x && (x.status === "done" || x.status === "skipped"); });
+  return `<div class="dayline"><h2>Day ${d} of ${st.days}</h2><span class="date">${esc(fmtDate(addDays(start, d - 1)))}</span></div>${tideBar(st, d)}${intro}
+  <p class="partnerline"><b>${PLAYERS[partner]}</b> has finished ${pdone} of ${pslots} today.</p>
+  <div class="stack">${slots.map((s) => slotCard(st, play, s, d)).join("")}${allResolved ? wildCard(st, play, d) : ""}</div>`;
+}
+function slotCard(st, play, s, d) {
+  const x = play.slots[s.key];
+  const top = (chip) => `<div class="slot-top"><span class="slot-name">${esc(s.name)}</span>${chip}</div>`;
+  if (!x || !x.cardId) return `<section class="slot">${top(`<span class="chip ${s.tier}">${TIER_LABEL[s.tier]}</span>`)}<button type="button" class="facedown" data-act="flip" data-slot="${s.key}"><span>Tap to turn over</span></button></section>`;
+  const c = cardById(x.cardId) || { tier: s.tier, text: "(missing card)" };
+  const statusChip = x.status === "done" ? `<span class="chip done">Done +${slotPoints(st, x)}</span>` : x.status === "skipped" ? `<span class="chip skipped">Skipped ${slotPoints(st, x)}</span>` : `<span class="chip ${c.tier}">${TIER_LABEL[c.tier] || ""}</span>`;
+  let inner = `<p class="cardtext">${esc(c.text)}</p>`;
+  if (c.codeWord) inner += `<div class="code">Code word: ${esc(c.codeWord)}</div>`;
+  if (c.custom) inner += `<div class="from">Written for you by ${PLAYERS[c.author] || "your partner"}</div>`;
+  const id = `ans-${s.key}`;
+  if (x.status === "open") {
+    if (c.wc === "choice") {
+      inner += `<div>${DECK.winnersChoice.map((o, i) => `<label class="opt"><input type="radio" name="wcopt" value="${i}" ${x.choice == i ? "checked" : ""}><span>${esc(o)}</span></label>`).join("")}</div>
+      <textarea class="g" id="${id}" placeholder="Details, or your own plan">${esc(x.answer || "")}</textarea>
+      <div class="actions"><button type="button" class="btn go" data-act="wcdone" data-slot="${s.key}">Lock in my pick</button></div>`;
+    } else if (s.kind === "truth") {
+      inner += `<textarea class="g" id="${id}" placeholder="Your answer. Your partner can read it on the Scores tab, or skip typing and say it out loud.">${esc(x.answer || "")}</textarea>
+      <div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Answered</button><button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${(st.points || DEFAULT_POINTS).skip})</button></div>`;
+    } else {
+      const canSwap = s.key === "night" && !x.swapped && !c.wc;
+      inner += `<div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Done it</button>${canSwap ? `<button type="button" class="btn" data-act="swap" data-slot="${s.key}">Not tonight (free swap)</button>` : ""}<button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${(st.points || DEFAULT_POINTS).skip})</button></div>`;
+    }
+  } else if (x.status === "done") {
+    if (x.answer) inner += `<div class="answer">Your answer: ${esc(x.answer)}</div>`;
+    if (c.wc === "choice" && x.choice != null) inner += `<div class="answer">Your pick: ${esc(DECK.winnersChoice[x.choice])}</div>`;
+    inner += `<div class="actions"><button type="button" class="btn small ghost" data-act="undo" data-slot="${s.key}">Undo</button></div>`;
+  } else if (x.status === "skipped") {
+    const f = ALL[x.forfeitId];
+    inner += `<div class="forfeit"><span class="lbl">Forfeit: do it today, no points</span><p class="cardtext">${esc(f ? f.text : "")}</p>
+      <label class="check"><input type="checkbox" data-act="forfeitdone" data-slot="${s.key}" ${x.forfeitDone ? "checked" : ""}> Forfeit paid</label></div>
+      <div class="actions"><button type="button" class="btn small ghost" data-act="undo" data-slot="${s.key}">Undo skip</button></div>`;
+  }
+  return `<section class="slot">${top(statusChip)}${inner}</section>`;
+}
+function wildCard(st, play, d) {
+  const w = play.wild;
+  if (!w) return `<section class="slot wild"><div class="slot-top"><span class="slot-name">Wild card unlocked</span></div><p class="note">You cleared every card today.</p><button type="button" class="facedown" data-act="wild"><span>Tap to draw your wild card</span></button></section>`;
+  const c = ALL[w.cardId];
+  return `<section class="slot wild"><div class="slot-top"><span class="slot-name">Wild card</span>${w.played ? `<span class="chip done">Played</span>` : ""}</div><p class="cardtext">${esc(c ? c.text : "")}</p>
+  ${w.played ? "" : `<div class="actions"><button type="button" class="btn go" data-act="playwild">Play it</button></div>`}</section>`;
+}
+function finalView(st) {
+  const a = scoreOf(st, "coral").net, b = scoreOf(st, "riptide").net;
+  const w = a === b ? null : a > b ? "coral" : "riptide";
+  return `<div class="hero"><h2>${w ? `${PLAYERS[w]} wins` : "Dead heat"}</h2><p class="note">Final score ${PLAYERS.coral} ${a}, ${PLAYERS.riptide} ${b}. Unspent coupons in the Wallet still count at home.</p></div>${tideBar(st, st.days + 1)}`;
+}
+
+function viewScores(st) {
+  const pl = me(), d = Math.min(dayNum(st), st.days);
+  const sc = { coral: scoreOf(st, "coral").net, riptide: scoreOf(st, "riptide").net };
+  const lead = sc.coral === sc.riptide ? null : sc.coral > sc.riptide ? "coral" : "riptide";
+  const box = (p) => `<div class="score ${lead === p ? "lead" : ""}"><div class="tag">${lead === p ? "Leading" : "&nbsp;"}</div><div class="n">${sc[p]}</div><div class="p">${PLAYERS[p]}${p === pl ? " (you)" : ""}</div></div>`;
+  const rows = [];
+  for (let day = Math.max(1, d); day >= 1; day--) {
+    ["coral", "riptide"].forEach((p) => {
+      const x = playOf(st, p, day); if (!x) return;
+      slotsFor(st, day).forEach((s) => {
+        const sl = x.slots[s.key]; if (!sl || !sl.cardId || sl.status === "open") return;
+        const c = cardById(sl.cardId); if (!c) return;
+        const key = `${p}-${day}-${s.key}`;
+        let extra = "";
+        const ans = sl.answer || (c.wc === "choice" && sl.choice != null ? DECK.winnersChoice[sl.choice] + (sl.answer ? "" : "") : "");
+        if (ans || (c.wc === "choice" && sl.choice != null)) {
+          const full = (c.wc === "choice" && sl.choice != null ? DECK.winnersChoice[sl.choice] + (sl.answer ? " · " + sl.answer : "") : sl.answer);
+          extra = p === pl || revealed.has(key) ? `<div class="answer">${p === pl ? "Your answer" : PLAYERS[p] + "'s answer"}: ${esc(full)}</div>` : `<button type="button" class="reveal" data-act="reveal" data-k="${key}">Tap to read ${PLAYERS[p]}'s answer</button>`;
+        }
+        rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · ${esc(s.name)}</span><span>${sl.status === "done" ? "+" + slotPoints(st, sl) : slotPoints(st, sl)}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`);
+      });
+      if (x.wild && x.wild.played && ALL[x.wild.cardId]) rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · Wild card</span><span>${ALL[x.wild.cardId].self >= 0 ? "+" : ""}${ALL[x.wild.cardId].self}</span></div><div class="t">${esc(ALL[x.wild.cardId].text)}</div></div>`);
+    });
+  }
+  return `<div class="scores">${box("coral")}${box("riptide")}</div>
+  <h3 class="sec">History</h3><div class="hist">${rows.join("") || `<div class="empty">Finished and skipped cards show up here for both of you. Truth answers stay hidden until you tap them.</div>`}</div>`;
+}
+
+function couponsFor(st, pl) {
+  const earned = Math.floor(scoreOf(st, pl).gross / 10);
+  const order = seededOrder(DECK.coupon, st.startDate + st.epoch + pl);
+  return Array.from({ length: earned }, (_, i) => order[i % order.length]);
+}
+function viewWallet(st) {
+  const pl = me(), partner = other(pl), w = cache.wallet[`e${st.epoch}_${pl}`] || { redeemed: {} }, pw = cache.wallet[`e${st.epoch}_${partner}`] || { redeemed: {} };
+  const g = scoreOf(st, pl).gross, toNext = 10 - (g % 10);
+  const mine = couponsFor(st, pl), theirs = couponsFor(st, partner);
+  const list = (arr, wal, own) => arr.map((c, i) => `<div class="coupon ${wal.redeemed && wal.redeemed[i] ? "used" : ""}"><b>${esc(c.text)}</b>${own ? (wal.redeemed && wal.redeemed[i] ? `<button type="button" class="btn small" data-act="unredeem" data-i="${i}">Undo</button>` : `<button type="button" class="btn small" data-act="redeem" data-i="${i}">Redeem</button>`) : ""}</div>`).join("");
+  return `<h3 class="sec">Your coupons</h3><p class="note">One coupon for every 10 points earned. Skips and steals don't take coupons away. ${toNext} more points to the next one.</p>
+  <div class="progress"><i style="width:${(g % 10) * 10}%"></i></div>
+  <div class="stack" style="margin-top:12px">${list(mine, w, true) || `<div class="empty">No coupons yet. Finish cards to earn your first at 10 points.</div>`}</div>
+  <h3 class="sec">${PLAYERS[partner]}'s coupons</h3><p class="note">What your partner can cash in on you.</p>
+  <div class="stack">${list(theirs, pw, false) || `<div class="empty">None yet.</div>`}</div>`;
+}
+
+function viewWrite(st) {
+  const pl = me();
+  const mine = Object.entries(cache.custom).filter(([, c]) => c && c.author === pl).sort((a, b) => (b[1].created || 0) - (a[1].created || 0));
+  return `<h3 class="sec">Write a card for ${PLAYERS[other(pl)]}</h3>
+  <p class="note">It goes to the front of their deck. They'll get it the next time that kind of card turns over, worth +${(st.points || DEFAULT_POINTS).custom} bonus point.</p>
+  <div class="form">
+    <div class="seg" role="radiogroup" aria-label="Kind">
+      ${[["truth", "Truth"], ["day", "Daytime dare"], ["night", "Night dare"]].map(([k, l], i) => `<label><input type="radio" name="wkind" value="${k}" ${i === 0 ? "checked" : ""}> ${l}</label>`).join("")}
+    </div>
+    <div class="seg" role="radiogroup" aria-label="Heat">
+      ${["flirty", "teasing", "naughty"].map((k, i) => `<label><input type="radio" name="wtier" value="${k}" ${i === 1 ? "checked" : ""}> ${TIER_LABEL[k]}</label>`).join("")}
+    </div>
+    <textarea class="g" id="w-text" placeholder="Daytime dares have to be safe in public, around the kids. Save the explicit ones for night."></textarea>
+    <div class="actions"><button type="button" class="btn go" data-act="addcard">Slip it into their deck</button></div>
+  </div>
+  <h3 class="sec">Cards you've written</h3>
+  <div class="hist">${mine.map(([id, c]) => `<div class="hrow"><div class="meta"><span>${{ truth: "Truth", day: "Daytime dare", night: "Night dare" }[c.kind]} · ${TIER_LABEL[c.tier]}</span><span>${c.usedEpoch === st.epoch ? "Drawn" : "Waiting"}</span></div><div class="t">${esc(c.text)}</div>${c.usedEpoch === st.epoch ? "" : `<div class="actions"><button type="button" class="btn small ghost" data-act="delcard" data-id="${esc(id)}">Remove</button></div>`}</div>`).join("") || `<div class="empty">Nothing written yet.</div>`}</div>`;
+}
+
+function viewSetup(first) {
+  const st = S() || defaultState();
+  const pts = st.points || DEFAULT_POINTS;
+  let wcOpts = `<option value="0" ${!+st.wcNight ? "selected" : ""}>Off</option>`;
+  for (let i = 1; i <= Math.max(st.days, 14); i++) wcOpts += `<option value="${i}" ${+st.wcNight === i ? "selected" : ""}>Night ${i}</option>`;
+  const conf = pendingConfirm === "reset";
+  return `${first ? `<div class="hero"><h2>Set up the week</h2><p class="note">One of you does this once. The other phone picks it up.</p></div>` : `<h3 class="sec">Trip setup</h3>`}
+  <div class="form">
+    <div class="grid2">
+      <label>Start date<input class="g" type="date" id="s-start" value="${esc(st.startDate)}"></label>
+      <label>Days<input class="g" type="number" id="s-days" min="2" max="14" value="${st.days}"></label>
+    </div>
+    <label>Winner's Choice night<select class="g" id="s-wc">${wcOpts}</select></label>
+    <label class="check"><input type="checkbox" id="s-light" ${st.lightFinal ? "checked" : ""}> Last night is short (packing night, quick dare)</label>
+    <label class="check"><input type="checkbox" id="s-partial" ${st.partialFirst ? "checked" : ""}> Day 1 starts in the afternoon</label>
+    <h3 class="sec">Cards each day</h3>
+    <label class="check"><input type="checkbox" id="s-truth" ${st.slots.truth ? "checked" : ""}> Morning truth</label>
+    <label class="check"><input type="checkbox" id="s-day" ${st.slots.day ? "checked" : ""}> Daytime dare</label>
+    <label class="check"><input type="checkbox" id="s-night" ${st.slots.night ? "checked" : ""}> Night dare</label>
+    <label class="check"><input type="checkbox" id="s-pillow" ${st.slots.pillow ? "checked" : ""}> Pillow talk truth (from day 2)</label>
+    <h3 class="sec">Points</h3>
+    <div class="grid2">
+      ${[["flirty", "Flirty"], ["teasing", "Teasing"], ["naughty", "Naughty"], ["custom", "Partner-written bonus"], ["skip", "Skip"]].map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k]}"></label>`).join("")}
+    </div>
+    <div class="actions"><button type="button" class="btn go" data-act="savesetup">${first ? "Start the game" : "Save setup"}</button></div>
+    ${first ? "" : `
+    <h3 class="sec">This phone</h3>
+    <div class="actions"><button type="button" class="btn" data-act="changepin">Change PIN</button><button type="button" class="btn" data-act="release">Switch code name</button></div>
+    <h3 class="sec">Start over</h3>
+    <p class="note">Clears every card drawn, all scores and coupons. Cards you've written for each other stay.</p>
+    <div class="actions">${conf ? `<button type="button" class="btn danger" data-act="resetyes">Yes, clear everything</button><button type="button" class="btn ghost" data-act="resetno">Cancel</button>` : `<button type="button" class="btn danger" data-act="reset">Reset game</button>`}</div>`}
+  </div>`;
+}
+
+/* ================= actions ================= */
+async function savePlay(st, play) { await putDoc("plays", playId(st, play.player, play.day), play); }
+function curPlay(st) { const d = dayNum(st), pl = me(); return JSON.parse(JSON.stringify(playOf(st, pl, d) || { player: pl, day: d, epoch: st.epoch, slots: {} })); }
+function slotDef(st, key) { return slotsFor(st, dayNum(st)).find((s) => s.key === key); }
+
+$("#game").addEventListener("click", async (e) => {
+  const tb = e.target.closest("[data-tab]");
+  if (tb) { tab = tb.dataset.tab; LS.set("ptl_tab", tab); pendingConfirm = null; render(); window.scrollTo(0, 0); return; }
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const act = el.dataset.act, st = S();
+  if (act === "lock") return lock();
+  if (act === "claim") {
+    const p = el.dataset.p; LS.set("ptl_player", p);
+    if (mode === "db" && uid) { const ns = { ...st, claims: { ...(st.claims || {}), [p]: uid } }; for (const q of ["coral", "riptide"]) if (q !== p && ns.claims[q] === uid) delete ns.claims[q]; await putDoc("game", "state", ns); }
+    else render();
+    return;
+  }
+  if (act === "savesetup") return saveSetup();
+  if (act === "changepin") { lock(); showPinSetup("Choose a new PIN (4–8 digits)."); return; }
+  if (act === "release") {
+    LS.del("ptl_player");
+    if (mode === "db" && uid && st) { const ns = { ...st, claims: { ...(st.claims || {}) } }; for (const q of ["coral", "riptide"]) if (ns.claims[q] === uid) delete ns.claims[q]; await putDoc("game", "state", ns); } else render();
+    return;
+  }
+  if (act === "reset") { pendingConfirm = "reset"; return render(); }
+  if (act === "resetno") { pendingConfirm = null; return render(); }
+  if (act === "resetyes") { pendingConfirm = null; await putDoc("game", "state", { ...st, epoch: (st.epoch || 1) + 1 }); tab = "today"; toast("Game reset."); return; }
+  if (act === "reveal") { revealed.add(el.dataset.k); return render(); }
+  if (!st || !me()) return;
+
+  if (act === "flip") {
+    const play = curPlay(st), s = slotDef(st, el.dataset.slot); if (!s || (play.slots[s.key] && play.slots[s.key].cardId)) return;
+    let pick;
+    if (s.pool === "wc") { const L = leaderFor(st, play.day); pick = { cardId: L === "tie" ? "wc:tie" : L === me() ? "wc:choice" : "wc:yes" }; }
+    else pick = pickCard(st, me(), play.day, s);
+    play.slots[s.key] = { cardId: pick.cardId, status: "open", at: Date.now() };
+    await savePlay(st, play);
+    if (pick.customId) { const c = cache.custom[pick.customId]; if (c) await putDoc("custom", pick.customId, { ...c, usedEpoch: st.epoch }); }
+    return;
+  }
+  if (act === "done" || act === "wcdone") {
+    const play = curPlay(st), k = el.dataset.slot, x = play.slots[k]; if (!x) return;
+    const ta = $("#ans-" + k); if (ta) x.answer = ta.value.trim();
+    if (act === "wcdone") { const r = document.querySelector('input[name="wcopt"]:checked'); if (!r && !x.answer) { toast("Pick an option or type your plan."); return; } x.choice = r ? +r.value : null; }
+    x.status = "done"; x.doneAt = Date.now(); await savePlay(st, play); toast(`+${slotPoints(st, x)} points`); return;
+  }
+  if (act === "skip") {
+    const play = curPlay(st), x = play.slots[el.dataset.slot]; if (!x) return;
+    x.status = "skipped"; x.forfeitId = x.forfeitId || pickFrom(st, "forfeit", me() + play.day + el.dataset.slot); x.forfeitDone = false;
+    await savePlay(st, play); return;
+  }
+  if (act === "undo") {
+    const play = curPlay(st), x = play.slots[el.dataset.slot]; if (!x) return;
+    x.status = "open"; delete x.forfeitId; delete x.forfeitDone; await savePlay(st, play); return;
+  }
+  if (act === "swap") {
+    const play = curPlay(st), s = slotDef(st, el.dataset.slot), x = play.slots[s.key]; if (!x || x.swapped) return;
+    const pick = pickCard(st, me(), play.day, s, x.cardId);
+    play.slots[s.key] = { cardId: pick.cardId, status: "open", swapped: true, prev: [x.cardId], at: Date.now() };
+    await savePlay(st, play);
+    if (pick.customId) { const c = cache.custom[pick.customId]; if (c) await putDoc("custom", pick.customId, { ...c, usedEpoch: st.epoch }); }
+    toast("Swapped. One swap per night."); return;
+  }
+  if (act === "wild") { const play = curPlay(st); if (play.wild) return; play.wild = { cardId: pickFrom(st, "wild", me() + play.day), played: false }; await savePlay(st, play); return; }
+  if (act === "playwild") { const play = curPlay(st); if (!play.wild || play.wild.played) return; play.wild.played = true; await savePlay(st, play); const w = ALL[play.wild.cardId]; toast(`${w.self >= 0 ? "+" : ""}${w.self} for you${w.partner ? `, ${w.partner >= 0 ? "+" : ""}${w.partner} for ${PLAYERS[other(me())]}` : ""}`); return; }
+  if (act === "redeem" || act === "unredeem") {
+    const id = `e${st.epoch}_${me()}`, w = JSON.parse(JSON.stringify(cache.wallet[id] || { player: me(), epoch: st.epoch, redeemed: {} }));
+    w.redeemed = w.redeemed || {}; if (act === "redeem") w.redeemed[el.dataset.i] = true; else delete w.redeemed[el.dataset.i];
+    await putDoc("wallet", id, w); if (act === "redeem") toast("Redeemed. Collect it."); return;
+  }
+  if (act === "addcard") {
+    const text = ($("#w-text").value || "").trim(); if (!text) { toast("Write the card first."); return; }
+    const kind = (document.querySelector('input[name="wkind"]:checked') || {}).value || "truth";
+    let tier = (document.querySelector('input[name="wtier"]:checked') || {}).value || "teasing";
+    if (kind === "day" && tier === "naughty") tier = "teasing";
+    const id = "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    $("#w-text").value = ""; $("#w-text").dataset.fresh = "1";
+    await putDoc("custom", id, { author: me(), target: other(me()), kind, tier, text: text.slice(0, 600), created: Date.now() });
+    const t = $("#w-text"); if (t) { t.value = ""; delete t.dataset.fresh; }
+    toast(kind === "day" && tier === "teasing" && (document.querySelector('input[name="wtier"]:checked') || {}).value === "naughty" ? "Saved as Teasing. Daytime dares stay public-safe." : "Slipped into their deck.");
+    return;
+  }
+  if (act === "delcard") { delDoc("custom", el.dataset.id); return; }
+});
+$("#game").addEventListener("change", async (e) => {
+  const el = e.target;
+  if (el.dataset && el.dataset.act === "forfeitdone") { const st = S(), play = curPlay(st), x = play.slots[el.dataset.slot]; if (!x) return; x.forfeitDone = el.checked; await savePlay(st, play); }
+});
+async function saveSetup() {
+  const prev = S() || defaultState();
+  const v = (id) => $("#" + id), num = (id, d) => { const n = parseInt(v(id).value, 10); return Number.isFinite(n) ? n : d; };
+  const days = Math.min(14, Math.max(2, num("s-days", 6)));
+  const startDate = v("s-start").value || prev.startDate;
+  let wc = num("s-wc", 0); if (wc > days) wc = days - 1;
+  const ns = { ...prev, startDate, days, wcNight: wc, lightFinal: v("s-light").checked, partialFirst: v("s-partial").checked,
+    slots: { truth: v("s-truth").checked, day: v("s-day").checked, night: v("s-night").checked, pillow: v("s-pillow").checked },
+    points: Object.fromEntries(Object.keys(DEFAULT_POINTS).map((k) => [k, num("s-p-" + k, DEFAULT_POINTS[k])])) };
+  if (!ns.claims) ns.claims = {}; if (!ns.epoch) ns.epoch = 1;
+  const first = !S();
+  await putDoc("game", "state", ns);
+  if (first) { tab = "today"; LS.set("ptl_tab", tab); } else toast("Setup saved.");
+}
+
+/* day rollover while unlocked */
+let lastDay = null;
+setInterval(() => { const st = S(); if (!unlocked || !st) return; const d = dayNum(st); if (d !== lastDay) { lastDay = d; render(); } }, 60000);
+
+renderDecoy();
+initStore();
+})();
+</script>
