@@ -67,10 +67,11 @@ Open the **Write** tab. Pick a level and a type (truth or dare), then write the 
 
 The app is published as a private claude.ai Artifact. To sync both phones:
 
-1. Open the artifact's share settings.
-2. Share it with your partner as **Contributor**.
+1. Open the artifact's **Share** menu.
+2. Invite your partner by email and choose **Can edit**. "Can view" and "Commenter" can't save game data.
+3. Leave link sharing off: an editor invited by email can only save while the artifact has no public link.
 
-Your partner needs a claude.ai account that the artifact can be shared with.
+Your partner needs a Claude account (free is fine) under the invited email. Invitations expire after 30 days.
 
 If sharing is not possible, the app still works on each phone separately. It will not sync. A "Not syncing" note appears at the top of the screen to show this. Scores on one phone will not reach the other.
 

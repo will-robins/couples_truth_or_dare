@@ -549,7 +549,7 @@ function restoreInputs(g, m) {
 }
 function header(st) {
   const p = st && me();
-  const roNote = readOnly ? `<div class="sync warn">View only: ask your partner to share as Contributor.</div>` : "";
+  const roNote = readOnly ? `<div class="sync warn">View only: ask your partner to invite you by email with "Can edit".</div>` : "";
   const syncNote = roNote + (mode === "db" ? "" : mode === "connecting" ? "" : `<div class="sync warn">Not syncing: this phone only. Scores won't reach your partner.</div>`);
   return `<div class="g-head"><h1>Tide &amp; Tell</h1>${p ? `<div class="who">playing as<b>${nameOf(p)}</b></div>` : ""}<button class="lockbtn" data-act="lock" type="button" aria-label="Lock">Lock</button></div>${syncNote}`;
 }
@@ -767,7 +767,7 @@ $("#game").addEventListener("click", async (e) => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act, st = S();
   if (act === "lock") return lock();
-  if (readOnly && !["changepin", "reveal"].includes(act)) return toast("View only: ask your partner to share as Contributor.");
+  if (readOnly && !["changepin", "reveal"].includes(act)) return toast("View only: ask your partner to invite you by email with "Can edit".");
   if (act === "claim") {
     const p = el.dataset.p;
     if (mode === "db") {
@@ -874,7 +874,7 @@ $("#game").addEventListener("click", async (e) => {
 $("#game").addEventListener("focusout", (e) => { if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest("[data-act],[data-tab]")) return; setTimeout(() => { if (dirty && !typing(document.activeElement)) render(); }, 0); });
 $("#game").addEventListener("change", async (e) => {
   const el = e.target;
-  if (readOnly && el.dataset && el.dataset.act) { toast("View only: ask your partner to share as Contributor."); render(); return; }
+  if (readOnly && el.dataset && el.dataset.act) { toast("View only: ask your partner to invite you by email with "Can edit"."); render(); return; }
   if (el.dataset && el.dataset.act === "forfeitdone") { const st = S(), play = curPlay(st), x = play.slots[el.dataset.slot]; if (!x) return; x.forfeitDone = el.checked; await savePlay(st, play); }
 });
 async function saveSetup() {
