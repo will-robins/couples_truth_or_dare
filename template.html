@@ -254,58 +254,92 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && unl
 
 /* ================= store (db or local) ================= */
 const cache = { state: null, plays: {}, custom: {}, wallet: {} };
-let db = null, uid = null, mode = "connecting";
-const writeChains = {};
+let db = null, uid = null, mode = "connecting", stateLoaded = false, readOnly = false, unsubs = [];
+const writeChains = {}, pending = {}, pendingSeq = {}; // pending[path]: latest not-yet-settled write (null = delete), overlaid on snapshots
+const isObj = (x) => x && typeof x === "object" && !Array.isArray(x);
+function deepMerge(a, b) { const o = { ...(a || {}) }; for (const k of Object.keys(b)) o[k] = isObj(b[k]) && isObj(o[k]) ? deepMerge(o[k], b[k]) : b[k]; return o; }
 function persistLocal() { LS.set("ptl_local", { state: cache.state, plays: cache.plays, custom: cache.custom, wallet: cache.wallet }); }
-function loadLocal() { const l = LS.get("ptl_local", null); if (l) Object.assign(cache, { state: l.state || null, plays: l.plays || {}, custom: l.custom || {}, wallet: l.wallet || {} }); }
+function loadLocal() { const l = LS.get("ptl_local", null); if (l) Object.assign(cache, { state: l.state || null, plays: l.plays || {}, custom: l.custom || {}, wallet: l.wallet || {} }); stateLoaded = true; }
 const saveErr = (e) => toast(e && e.code === "quota_exceeded" ? "Storage is full." : "Couldn't save. Check your connection and try again.");
+function queueWrite(path, data, run) {
+  // data: value to overlay on snapshots while in flight (null = deleted)
+  const col = path.split("/")[0];
+  pending[path] = col === "game" && isObj(data) && isObj(pending[path]) ? deepMerge(pending[path], data) : data;
+  const seq = pendingSeq[path] = (pendingSeq[path] || 0) + 1;
+  const p = (writeChains[path] || Promise.resolve()).then(run).finally(() => { if (pendingSeq[path] === seq) delete pending[path]; });
+  writeChains[path] = p; return p;
+}
+function applyPending() {
+  for (const path of Object.keys(pending)) {
+    const [col, id] = path.split("/"), v = pending[path];
+    if (col === "game") { if (v) cache.state = deepMerge(cache.state, v); }
+    else if (v === null) delete cache[col][id]; else cache[col][id] = v;
+  }
+}
 function putDoc(col, id, data) {
   // col: "game" (id "state"), "plays", "custom", "wallet"
   if (col === "game") cache.state = data; else cache[col][id] = data;
   if (mode !== "db") { persistLocal(); render(); return Promise.resolve(); }
   const path = col + "/" + id;
-  const run = () => db.doc(path).set(data).catch(saveErr);
-  writeChains[path] = (writeChains[path] || Promise.resolve()).then(run);
-  render(); return writeChains[path];
+  const p = queueWrite(path, data, () => db.doc(path).set(data).catch(saveErr));
+  render(); return p;
 }
-function updateState(patch) {
+function updateState(patch, local = patch) {
   // merge fields into game/state: a field-level update in db mode (when the doc exists), a merge + persist locally
+  // (local: what to merge into the cache; differs from patch only for claims, where cache keeps the full map)
   const exists = !!cache.state;
-  cache.state = { ...(cache.state || {}), ...patch };
+  cache.state = { ...(cache.state || {}), ...local };
   if (mode !== "db") { persistLocal(); render(); return Promise.resolve(); }
   const path = "game/state", full = cache.state;
-  const run = () => (exists ? db.doc(path).update(patch) : db.doc(path).set(full)).catch(saveErr);
-  writeChains[path] = (writeChains[path] || Promise.resolve()).then(run);
-  render(); return writeChains[path];
+  const p = queueWrite(path, exists ? patch : full, () => (exists ? db.doc(path).update(patch) : db.doc(path).set(full)).catch(saveErr));
+  render(); return p;
 }
 function delDoc(col, id) {
   delete cache[col][id];
   if (mode !== "db") { persistLocal(); render(); return; }
-  db.doc(col + "/" + id).delete().catch(() => toast("Couldn't delete. Try again."));
+  const path = col + "/" + id;
+  queueWrite(path, null, () => db.doc(path).delete().catch(() => toast("Couldn't delete. Try again.")));
   render();
 }
 const retried = {};
 function listen(key, ref, onData) {
-  ref.onSnapshot((snap) => { retried[key] = false; onData(snap); }, (e) => {
+  const un = ref.onSnapshot((snap) => { if (mode !== "db") return; retried[key] = false; onData(snap); }, (e) => {
+    if (mode !== "db") return;
     if (e && e.code === "unavailable" && !retried[key]) { retried[key] = true; listen(key, ref, onData); return; } // one re-subscribe first
     onDbErr();
   });
+  if (typeof un === "function") unsubs.push(un);
 }
 function subscribeAll() {
-  listen("state", db.doc("game/state"), (s) => { cache.state = s.exists ? s.data() : null; render(); });
+  listen("state", db.doc("game/state"), (s) => {
+    const fromCache = !!(s.metadata && s.metadata.fromCache);
+    if (s.exists) { cache.state = s.data(); stateLoaded = true; }
+    else if (!fromCache) { cache.state = null; stateLoaded = true; } // only a server-definitive miss means "no game yet"
+    applyPending(); render();
+  });
   ["plays", "custom", "wallet"].forEach((col) => {
-    listen(col, db.collection(col), (qs) => { const m = {}; qs.docs.forEach((d) => { m[d.id] = d.data(); }); cache[col] = m; render(); });
+    listen(col, db.collection(col), (qs) => { const m = {}; qs.docs.forEach((d) => { m[d.id] = d.data(); }); cache[col] = m; applyPending(); render(); });
   });
 }
-function onDbErr() { if (mode === "local-fallback") return; mode = "local-fallback"; loadLocal(); render(); } // header shows the "Not syncing" note
+function onDbErr() {
+  if (mode === "local-fallback") return; mode = "local-fallback";
+  unsubs.forEach((u) => { try { u(); } catch {} }); unsubs = [];
+  loadLocal(); render(); // header shows the "Not syncing" note
+}
 async function initStore() {
   const c = window.claude;
   if (!c || typeof c.use !== "function") { mode = "local"; loadLocal(); render(); return; }
+  let timer;
   try {
-    const [d, u] = await Promise.all([c.use("db"), c.use("user")]);
-    if (u) { try { uid = await u.id(); } catch { uid = null; } }
+    const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), 12000); });
+    const [d, u] = await Promise.race([Promise.all([c.use("db"), c.use("user")]), timeout]);
+    if (u) {
+      try { uid = await u.id(); } catch { uid = null; }
+      try { if (typeof u.can === "function" && (await u.can("data.write")) === false) readOnly = true; } catch {}
+    }
     if (d) { db = d; mode = "db"; subscribeAll(); } else { mode = "local"; loadLocal(); }
   } catch { mode = "local"; loadLocal(); }
+  clearTimeout(timer);
   render();
 }
 
@@ -316,7 +350,8 @@ function defaultState() {
     slots: { truth: true, day: true, night: true, pillow: true }, points: { ...DEFAULT_POINTS }, claims: {}, epoch: 1 };
 }
 const S = () => cache.state;
-function devId() { let d = LS.get("ptl_dev", null); if (!d) { d = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); LS.set("ptl_dev", d); } return d; }
+let devCache = null;
+function devId() { if (!devCache) { devCache = LS.get("ptl_dev", null); if (!devCache) { devCache = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); LS.set("ptl_dev", devCache); } } return devCache; }
 const claimKey = () => (uid || "anon") + ":" + devId();
 function me() {
   const st = S(); if (!st) return null;
@@ -425,6 +460,7 @@ let revealed = new Set();
 let pendingConfirm = null;
 let toastTimer = null;
 function toast(msg) {
+  if (!unlocked) return;
   let t = $("#toast"); if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
   t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
 }
@@ -441,7 +477,7 @@ function render() {
   const keep = captureInputs(g);
   const st = S();
   let body;
-  if (mode === "connecting") body = `<div class="hero"><h2>Tide &amp; Tell</h2><p class="note">Connecting…</p></div>`;
+  if (mode === "connecting" || (mode === "db" && !stateLoaded && !st)) body = `<div class="hero"><h2>Tide &amp; Tell</h2><p class="note">Connecting…</p></div>`;
   else if (!st) body = viewSetup(true);
   else if (!me()) body = viewPick(st);
   else body = viewTab(st);
@@ -462,7 +498,8 @@ function restoreInputs(g, m) {
 }
 function header(st) {
   const p = st && me();
-  const syncNote = mode === "db" ? "" : mode === "connecting" ? "" : `<div class="sync warn">Not syncing: this phone only. Scores won't reach your partner.</div>`;
+  const roNote = readOnly ? `<div class="sync warn">View only: ask your partner to share as Contributor.</div>` : "";
+  const syncNote = roNote + (mode === "db" ? "" : mode === "connecting" ? "" : `<div class="sync warn">Not syncing: this phone only. Scores won't reach your partner.</div>`);
   return `<div class="g-head"><h1>Tide &amp; Tell</h1>${p ? `<div class="who">playing as<b>${PLAYERS[p]}</b></div>` : ""}<button class="lockbtn" data-act="lock" type="button" aria-label="Lock">Lock</button></div>${syncNote}`;
 }
 function tabsBar() {
@@ -480,7 +517,7 @@ function viewPick(st) {
   const c = st.claims || {};
   const taken = (p) => mode === "db" && c[p] && c[p] !== claimKey();
   return `<div class="hero"><h2>Who's holding this phone?</h2><p class="note">Pick your code name. Your partner picks the other one on their phone.</p></div>
-  <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ${taken(p) ? "disabled" : ""}><b>${PLAYERS[p]}</b><span>${taken(p) ? "Taken" : "Play as " + PLAYERS[p]}</span></button>`).join("")}</div>`;
+  <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ><b>${PLAYERS[p]}</b><span>${taken(p) ? (pendingConfirm === "take:" + p ? "Tap again to take over" : "Taken — tap twice to take over") : "Play as " + PLAYERS[p]}</span></button>`).join("")}</div>`;
 }
 
 function tideBar(st, d) {
@@ -660,13 +697,16 @@ $("#game").addEventListener("click", async (e) => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act, st = S();
   if (act === "lock") return lock();
+  if (readOnly && !["changepin", "reveal"].includes(act)) return toast("View only: ask your partner to share as Contributor.");
   if (act === "claim") {
     const p = el.dataset.p;
     if (mode === "db") {
       const k = claimKey(), claims = { ...((S() || {}).claims || {}) };
-      if (claims[p] && claims[p] !== k) return render();
-      for (const q of ["coral", "riptide"]) if (claims[q] === k) delete claims[q];
-      claims[p] = k; await updateState({ claims });
+      if (claims[p] && claims[p] !== k && pendingConfirm !== "take:" + p) { pendingConfirm = "take:" + p; return render(); }
+      pendingConfirm = null;
+      const patch = { [p]: k };
+      for (const q of ["coral", "riptide"]) if (q !== p && claims[q] === k) patch[q] = null; // never delete keys: null merges cleanly
+      await updateState({ claims: patch }, { claims: { ...claims, ...patch } });
     } else { LS.set("ptl_player", p); render(); }
     return;
   }
@@ -675,8 +715,9 @@ $("#game").addEventListener("click", async (e) => {
   if (act === "release") {
     if (mode === "db") {
       const k = claimKey(), claims = { ...((S() || {}).claims || {}) };
-      for (const q of ["coral", "riptide"]) if (claims[q] === k) delete claims[q];
-      await updateState({ claims });
+      const patch = {};
+      for (const q of ["coral", "riptide"]) if (claims[q] === k) patch[q] = null;
+      await updateState({ claims: patch }, { claims: { ...claims, ...patch } });
     } else { LS.del("ptl_player"); render(); }
     return;
   }
@@ -741,9 +782,10 @@ $("#game").addEventListener("click", async (e) => {
   }
   if (act === "delcard") { delDoc("custom", el.dataset.id); return; }
 });
-$("#game").addEventListener("focusout", () => setTimeout(() => { if (dirty && !typing(document.activeElement)) render(); }, 0));
+$("#game").addEventListener("focusout", (e) => { if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest("[data-act],[data-tab]")) return; setTimeout(() => { if (dirty && !typing(document.activeElement)) render(); }, 0); });
 $("#game").addEventListener("change", async (e) => {
   const el = e.target;
+  if (readOnly && el.dataset && el.dataset.act) { toast("View only: ask your partner to share as Contributor."); render(); return; }
   if (el.dataset && el.dataset.act === "forfeitdone") { const st = S(), play = curPlay(st), x = play.slots[el.dataset.slot]; if (!x) return; x.forfeitDone = el.checked; await savePlay(st, play); }
 });
 async function saveSetup() {
