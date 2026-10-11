@@ -543,7 +543,7 @@ console.log("Nicknames");
   await click(np, '[data-tab="today"]');
   check(/Sandbar/.test(await np.textContent(".partnerline")), "partnerline shows partner's custom nickname");
   await click(np, '[data-tab="scores"]');
-  check(/Sandbar/.test(await np.textContent(".stack")) && /bxb/.test(await np.textContent(".stack")), "Scores shows both nicknames");
+  check(/Sandbar/.test(await np.textContent("#game")) && /bxb/.test(await np.textContent("#game")), "Scores shows both nicknames");
   // (5) Change nickname from Setup, and Cancel
   await click(np, '[data-tab="settings"]'); await click(np, '[data-act="gonick"]');
   await np.waitForSelector(".nick");
@@ -555,7 +555,7 @@ console.log("Nicknames");
   await click(np, '.nick[data-n="Mermaid"]');
   eq(await np.textContent(".who b"), "Mermaid", "preset nickname applied from Setup");
   eq(await np.locator('[data-act="gonick"]').count(), 1, "returns to Setup after choosing");
-  check((await np.textContent(".stack")).includes("Switch player"), "Switch player button label");
+  check((await np.textContent("#game")).includes("Switch player"), "Switch player button label");
   // coral seat: Mermaid is disabled for partner
   await click(np, '[data-act="release"]'); await claim(np, "coral");
   await click(np, '[data-tab="settings"]'); await click(np, '[data-act="gonick"]');

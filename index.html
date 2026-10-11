@@ -206,7 +206,7 @@ const fmtDate = (d) => d.toLocaleDateString(undefined, { weekday: "short", month
 
 // Seats are fixed ids ("coral", "riptide"); each player picks the nickname shown everywhere (state.names).
 const SEATS = { coral: "Player 1", riptide: "Player 2" };
-const NICKNAMES = ["Coral", "Riptide", "Sun-Kissed", "Salty Siren", "Tan Lines", "Lifeguard", "Mermaid", "Pool Shark", "Beach Bum", "Sea Breeze", "Hot Sand", "Cabana Boy"];
+const NICKNAMES = ["Coral", "Riptide", "Sun-Kissed", "Salty Siren", "Tan Lines", "Lifeguard", "Mermaid", "Pool Shark", "Beach Bum", "Sea Breeze", "Hot Stuff", "Cabana Boy"];
 const cleanName = (n) => String(n || "").replace(/[^A-Za-z0-9 '!.\-]/g, "").replace(/\s+/g, " ").trim().slice(0, 18);
 const chosenName = (p) => cleanName(cache.state && cache.state.names && cache.state.names[p]);
 const nameOf = (p) => chosenName(p) || (p === "riptide" ? "Riptide" : "Coral");
@@ -510,9 +510,9 @@ function render() {
   if (mode === "connecting" || (mode === "db" && !stateLoaded && !st)) body = `<div class="hero"><h2>Tide &amp; Tell</h2><p class="note">Connecting…</p></div>`;
   else if (!st) body = viewSetup(true);
   else if (!me()) body = viewPick(st);
-  else if (!chosenName(me())) body = viewNick(st, true);
+  else if (!chosenName(me()) && !readOnly) body = viewNick(st, true);
   else body = viewTab(st);
-  g.innerHTML = header(st) + body + (st && me() && chosenName(me()) ? tabsBar() : "");
+  g.innerHTML = header(st) + body + (st && me() && (chosenName(me()) || readOnly) ? tabsBar() : "");
   restoreInputs(g, keep);
 }
 const chkKey = (el) => (el.id ? "#" + el.id : el.name ? el.name + "=" + el.value : null);
@@ -557,7 +557,7 @@ function viewNick(st, first) {
   return `<div class="hero"><h2>${first ? "Pick your nickname" : "Change your nickname"}</h2><p class="note">Your partner sees this name all week.</p></div>
   <div class="nicks">${NICKNAMES.map((n) => { const t = n.toLowerCase() === theirs; return `<button type="button" class="nick ${n === mine ? "on" : ""}" data-act="nick" data-n="${n}" ${t ? "disabled" : ""}>${n}${t ? "<small>your partner's</small>" : ""}</button>`; }).join("")}</div>
   <div class="form" style="margin-top:16px"><label>Or make up your own<input class="g" id="nick-own" maxlength="18" placeholder="Letters and numbers, up to 18"></label>
-  <div class="actions"><button type="button" class="btn go" data-act="nickown">Use this name</button>${first ? "" : `<button type="button" class="btn ghost" data-tab="settings">Cancel</button>`}</div></div>`;
+  <div class="actions"><button type="button" class="btn go" data-act="nickown">Use this name</button>${first ? `<button type="button" class="btn ghost" data-act="release">Wrong seat? Go back</button>` : `<button type="button" class="btn ghost" data-tab="settings">Cancel</button>`}</div></div>`;
 }
 
 function tideBar(st, d) {
@@ -781,8 +781,8 @@ $("#game").addEventListener("click", async (e) => {
     if (!n) { toast("Type a name using letters or numbers."); return; }
     if (n.toLowerCase() === chosenName(other(me())).toLowerCase()) { toast("Your partner already has that name."); return; }
     const was = tab === "nick";
-    await updateState({ names: { [me()]: n } }, { names: { ...((S() && S().names) || {}), [me()]: n } });
     if (was) { tab = "settings"; LS.set("ptl_tab", tab); }
+    await updateState({ names: { [me()]: n } }, { names: { ...((S() && S().names) || {}), [me()]: n } });
     toast(`You're ${n} now.`); return;
   }
   if (act === "confirm") {
