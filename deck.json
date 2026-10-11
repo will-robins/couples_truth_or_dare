@@ -162,14 +162,14 @@
     { "id": "ff12", "tier": "forfeit", "text": "Your partner can call one dare on you tomorrow at any time, and you can't skip it." }
   ],
   "wild": [
-    { "id": "wc1", "self": 3, "partner": -3, "text": "Steal: take 3 points from your partner." },
-    { "id": "wc2", "self": 3, "partner": 0, "text": "Bonus: you earn 3 free points. Rub it in." },
-    { "id": "wc3", "self": 2, "partner": 0, "text": "Command: tell your partner one thing to do for you in the next hour. They do it, you get 2 points." },
-    { "id": "wc4", "self": 1, "partner": 0, "text": "Veto: cancel one of your partner's next dares and pick a replacement from your own head. You get 1 point now." },
-    { "id": "wc5", "self": 2, "partner": 0, "text": "You choose: write your partner's next night dare using \"Write a card\". 2 points." },
-    { "id": "wc6", "self": 2, "partner": 2, "text": "Truce: you both get 2 points. Spend them on 10 minutes of making out right now." },
-    { "id": "wc7", "self": 3, "partner": -1, "text": "Raid: take 1 point from your partner and get 2 more for free." },
-    { "id": "wc8", "self": 2, "partner": 0, "text": "Sneak attack: claim one kiss anywhere, any time tomorrow, no matter who's around (PG only). 2 points." }
+    { "id": "wc1", "self": 3, "partner": -3, "text": "Steal: take {steal} points from your partner." },
+    { "id": "wc2", "self": 3, "partner": 0, "text": "Bonus: you earn {self} free points. Rub it in." },
+    { "id": "wc3", "self": 2, "partner": 0, "text": "Command: tell your partner one thing to do for you in the next hour. They do it, you get {self} points." },
+    { "id": "wc4", "self": 1, "partner": 0, "text": "Veto: cancel one of your partner's next dares and pick a replacement from your own head. You get {self} points now." },
+    { "id": "wc5", "self": 2, "partner": 0, "text": "You choose: write your partner's next night dare using \"Write a card\". {self} points." },
+    { "id": "wc6", "self": 2, "partner": 2, "text": "Truce: you both get {self} points. Spend them on 10 minutes of making out right now." },
+    { "id": "wc7", "self": 3, "partner": -1, "text": "Raid: take {steal} points from your partner. You gain {self} in total." },
+    { "id": "wc8", "self": 2, "partner": 0, "text": "Sneak attack: claim one kiss anywhere, any time before the trip ends, no matter who's around (PG only). {self} points." }
   ],
   "coupon": [
     { "id": "cp1", "text": "One 30-minute massage, redeemable any night" },

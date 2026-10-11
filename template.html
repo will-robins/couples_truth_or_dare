@@ -354,7 +354,23 @@ async function initStore() {
 }
 
 /* ================= game model ================= */
-const DEFAULT_POINTS = { flirty: 1, teasing: 2, naughty: 3, custom: 1, confirm: 1, skip: -2 };
+const DEFAULT_POINTS = { tFlirty: 10, tTeasing: 15, tNaughty: 25, dFlirty: 15, dTeasing: 20, dNaughty: 40, custom: 5, confirm: 10, skip: -15, wild: 5, coupon: 100 };
+const POINT_LABELS = [["tFlirty", "Truth: Flirty"], ["dFlirty", "Dare: Flirty"], ["tTeasing", "Truth: Teasing"], ["dTeasing", "Dare: Teasing"], ["tNaughty", "Truth: Naughty"], ["dNaughty", "Dare: Naughty"],
+  ["custom", "Partner-written bonus"], ["confirm", "Confirmed dare bonus"], ["skip", "Skip"], ["wild", "Wild card multiplier"], ["coupon", "Points per coupon"]];
+// Games saved on the old 1/2/3 scale (no tFlirty key) switch to the current defaults wholesale.
+function ptsOf(st) {
+  const p = st && st.points;
+  if (!p || p.tFlirty == null) return DEFAULT_POINTS;
+  const o = { ...DEFAULT_POINTS };
+  for (const k of Object.keys(o)) if (Number.isFinite(p[k])) o[k] = p[k];
+  if (o.coupon < 1) o.coupon = DEFAULT_POINTS.coupon;
+  return o;
+}
+const TIER_KEY = { flirty: "Flirty", teasing: "Teasing", naughty: "Naughty" };
+function wildText(st, w) {
+  const m = ptsOf(st).wild;
+  return String(w.text).replace(/\{self\}/g, w.self * m).replace(/\{steal\}/g, Math.abs(w.partner) * m);
+}
 function defaultState() {
   return { startDate: ymd(today()), days: 6, wcNight: 5, lightFinal: true, partialFirst: new Date().getHours() >= 12,
     slots: { truth: true, day: true, night: true, pillow: true }, points: { ...DEFAULT_POINTS }, claims: {}, epoch: 1 };
@@ -398,7 +414,7 @@ const ALL = {};
 ["truth", "day", "night", "quick", "forfeit", "wild", "coupon"].forEach((k) => DECK[k].forEach((c) => { ALL[c.id] = { ...c, pool: k }; }));
 function cardById(id) {
   if (!id) return null;
-  if (id.startsWith("custom:")) { const c = cache.custom[id.slice(7)]; return c ? { id, tier: c.tier, text: c.text, custom: true, author: c.author } : { id, tier: "teasing", text: "(This card was deleted.)", custom: true }; }
+  if (id.startsWith("custom:")) { const c = cache.custom[id.slice(7)]; return c ? { id, tier: c.tier, kind: c.kind, text: c.text, custom: true, author: c.author } : { id, tier: "teasing", text: "(This card was deleted.)", custom: true }; }
   if (id === "wc:choice") return { id, tier: "naughty", text: "You're in the lead. Tonight is your pick. Choose how the night goes:" , wc: "choice" };
   if (id === "wc:yes") return { id, tier: "naughty", text: "Your partner is in the lead, so tonight is theirs. Your dare: say yes to their Winner's Choice pick, within your limits. Their pick shows on the Scores tab.", wc: "yes" };
   if (id === "wc:tie") return { id, tier: "naughty", text: "You're tied. You each get to choose one thing about tonight. Pick yours:", wc: "choice" };
@@ -437,11 +453,12 @@ function pickFrom(st, poolName, seedExtra) {
 }
 
 function slotPoints(st, sl) {
-  const pts = st.points || DEFAULT_POINTS;
+  const pts = ptsOf(st);
   if (sl.status === "skipped") return pts.skip;
   if (sl.status !== "done") return 0;
   const c = cardById(sl.cardId); if (!c) return 0;
-  return (pts[c.tier] || 0) + (c.custom ? pts.custom : 0);
+  const isTruth = c.pool === "truth" || c.kind === "truth";
+  return (pts[(isTruth ? "t" : "d") + TIER_KEY[c.tier]] || 0) + (c.custom ? pts.custom : 0);
 }
 // Partner confirmation: each player writes only their own confirms doc (confirms/e{epoch}_{confirmer}),
 // mapping "<player>-<day>-<slot>" to the confirmed cardId, so a redrawn or undone card loses the bonus.
@@ -450,7 +467,7 @@ function confirmedBy(st, pl, day, key, sl) {
   const c = cache.confirms[`e${st.epoch}_${other(pl)}`];
   return !!(sl && sl.status === "done" && DARE_KEYS.has(key) && c && c.map && c.map[`${pl}-${day}-${key}`] === sl.cardId);
 }
-const confirmPts = (st) => { const v = (st.points || DEFAULT_POINTS).confirm; return Number.isFinite(v) ? v : DEFAULT_POINTS.confirm; };
+const confirmPts = (st) => ptsOf(st).confirm;
 function confirmBonus(st, pl, day, key, sl) { return confirmedBy(st, pl, day, key, sl) ? confirmPts(st) : 0; }
 function toConfirm(st, pl) {
   // partner's finished dares this player hasn't confirmed yet
@@ -473,8 +490,9 @@ function scoreOf(st, pl, opts = {}) {
     });
     if (x.wild && x.wild.played) {
       const w = ALL[x.wild.cardId]; if (!w) return;
-      if (x.player === pl) { net += w.self; if (w.self > 0) gross += w.self; }
-      else { net += w.partner; if (w.partner > 0) gross += w.partner; }
+      const m = ptsOf(st).wild, ws = w.self * m, wp = w.partner * m;
+      if (x.player === pl) { net += ws; if (ws > 0) gross += ws; }
+      else { net += wp; if (wp > 0) gross += wp; }
     }
   });
   return { net, gross };
@@ -598,10 +616,10 @@ function slotCard(st, play, s, d) {
       <div class="actions"><button type="button" class="btn go" data-act="wcdone" data-slot="${s.key}">Lock in my pick</button></div>`;
     } else if (s.kind === "truth") {
       inner += `<textarea class="g" id="${id}" placeholder="Your answer. Your partner can read it on the Scores tab, or skip typing and say it out loud.">${esc(x.answer || "")}</textarea>
-      <div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Answered</button><button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${(st.points || DEFAULT_POINTS).skip})</button></div>`;
+      <div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Answered</button><button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${ptsOf(st).skip})</button></div>`;
     } else {
       const canSwap = s.key === "night" && !x.swapped && !c.wc;
-      inner += `<div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Done it</button>${canSwap ? `<button type="button" class="btn" data-act="swap" data-slot="${s.key}">Not tonight (free swap)</button>` : ""}<button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${(st.points || DEFAULT_POINTS).skip})</button></div>`;
+      inner += `<div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Done it</button>${canSwap ? `<button type="button" class="btn" data-act="swap" data-slot="${s.key}">Not tonight (free swap)</button>` : ""}<button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${ptsOf(st).skip})</button></div>`;
     }
   } else if (x.status === "done") {
     if (x.answer) inner += `<div class="answer">Your answer: ${esc(x.answer)}</div>`;
@@ -620,7 +638,7 @@ function wildCard(st, play, d) {
   const w = play.wild;
   if (!w) return `<section class="slot wild"><div class="slot-top"><span class="slot-name">Wild card unlocked</span></div><p class="note">You cleared every card today.</p><button type="button" class="facedown" data-act="wild"><span>Tap to draw your wild card</span></button></section>`;
   const c = ALL[w.cardId];
-  return `<section class="slot wild"><div class="slot-top"><span class="slot-name">Wild card</span>${w.played ? `<span class="chip done">Played</span>` : ""}</div><p class="cardtext">${esc(c ? c.text : "")}</p>
+  return `<section class="slot wild"><div class="slot-top"><span class="slot-name">Wild card</span>${w.played ? `<span class="chip done">Played</span>` : ""}</div><p class="cardtext">${esc(c ? wildText(st, c) : "")}</p>
   ${w.played ? "" : `<div class="actions"><button type="button" class="btn go" data-act="playwild">Play it</button></div>`}</section>`;
 }
 function finalView(st) {
@@ -657,7 +675,7 @@ function viewScores(st) {
         }
         rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${nameOf(p)} · ${esc(s.name)}</span><span>${sl.status === "done" ? "+" + (slotPoints(st, sl) + bonus) : slotPoints(st, sl)}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`);
       });
-      if (x.wild && x.wild.played && ALL[x.wild.cardId]) rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${nameOf(p)} · Wild card</span><span>${ALL[x.wild.cardId].self >= 0 ? "+" : ""}${ALL[x.wild.cardId].self}</span></div><div class="t">${esc(ALL[x.wild.cardId].text)}</div></div>`);
+      if (x.wild && x.wild.played && ALL[x.wild.cardId]) rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${nameOf(p)} · Wild card</span><span>${ALL[x.wild.cardId].self >= 0 ? "+" : ""}${ALL[x.wild.cardId].self * ptsOf(st).wild}</span></div><div class="t">${esc(wildText(st, ALL[x.wild.cardId]))}</div></div>`);
     });
   }
   return `<div class="scores">${box("coral")}${box("riptide")}</div>
@@ -665,18 +683,18 @@ function viewScores(st) {
 }
 
 function couponsFor(st, pl) {
-  const earned = Math.floor(scoreOf(st, pl).gross / 10);
+  const earned = Math.floor(scoreOf(st, pl).gross / ptsOf(st).coupon);
   const order = seededOrder(DECK.coupon, st.startDate + st.epoch + pl);
   return Array.from({ length: earned }, (_, i) => order[i % order.length]);
 }
 function viewWallet(st) {
   const pl = me(), partner = other(pl), w = cache.wallet[`e${st.epoch}_${pl}`] || { redeemed: {} }, pw = cache.wallet[`e${st.epoch}_${partner}`] || { redeemed: {} };
-  const g = scoreOf(st, pl).gross, toNext = 10 - (g % 10);
+  const g = scoreOf(st, pl).gross, per = ptsOf(st).coupon, toNext = per - (g % per);
   const mine = couponsFor(st, pl), theirs = couponsFor(st, partner);
   const list = (arr, wal, own) => arr.map((c, i) => `<div class="coupon ${wal.redeemed && wal.redeemed[i] ? "used" : ""}"><b>${esc(c.text)}</b>${own ? (wal.redeemed && wal.redeemed[i] ? `<button type="button" class="btn small" data-act="unredeem" data-i="${i}">Undo</button>` : `<button type="button" class="btn small" data-act="redeem" data-i="${i}">Redeem</button>`) : ""}</div>`).join("");
-  return `<h3 class="sec">Your coupons</h3><p class="note">One coupon for every 10 points earned. Skips and steals don't take coupons away. ${toNext} more points to the next one.</p>
-  <div class="progress"><i style="width:${(g % 10) * 10}%"></i></div>
-  <div class="stack" style="margin-top:12px">${list(mine, w, true) || `<div class="empty">No coupons yet. Finish cards to earn your first at 10 points.</div>`}</div>
+  return `<h3 class="sec">Your coupons</h3><p class="note">One coupon for every ${per} points earned. Skips and steals don't take coupons away. ${toNext} more points to the next one.</p>
+  <div class="progress"><i style="width:${((g % per) / per) * 100}%"></i></div>
+  <div class="stack" style="margin-top:12px">${list(mine, w, true) || `<div class="empty">No coupons yet. Finish cards to earn your first at ${per} points.</div>`}</div>
   <h3 class="sec">${nameOf(partner)}'s coupons</h3><p class="note">What your partner can cash in on you.</p>
   <div class="stack">${list(theirs, pw, false) || `<div class="empty">None yet.</div>`}</div>`;
 }
@@ -685,7 +703,7 @@ function viewWrite(st) {
   const pl = me();
   const mine = Object.entries(cache.custom).filter(([, c]) => c && c.author === pl).sort((a, b) => (b[1].created || 0) - (a[1].created || 0));
   return `<h3 class="sec">Write a card for ${nameOf(other(pl))}</h3>
-  <p class="note">It goes to the front of their deck. They'll get it the next time that kind of card turns over, worth +${(st.points || DEFAULT_POINTS).custom} bonus point.</p>
+  <p class="note">It goes to the front of their deck. They'll get it the next time that kind of card turns over, worth +${ptsOf(st).custom} bonus points.</p>
   <div class="form">
     <div class="seg" role="radiogroup" aria-label="Kind">
       ${[["truth", "Truth"], ["day", "Daytime dare"], ["night", "Night dare"]].map(([k, l], i) => `<label><input type="radio" name="wkind" value="${k}" ${i === 0 ? "checked" : ""}> ${l}</label>`).join("")}
@@ -702,7 +720,7 @@ function viewWrite(st) {
 
 function viewSetup(first) {
   const st = S() || defaultState();
-  const pts = st.points || DEFAULT_POINTS;
+  const pts = ptsOf(st);
   let wcOpts = `<option value="0" ${!+st.wcNight ? "selected" : ""}>Off</option>`;
   for (let i = 1; i <= Math.max(st.days, 14); i++) wcOpts += `<option value="${i}" ${+st.wcNight === i ? "selected" : ""}>Night ${i}</option>`;
   const conf = pendingConfirm === "reset";
@@ -722,7 +740,7 @@ function viewSetup(first) {
     <label class="check"><input type="checkbox" id="s-pillow" ${st.slots.pillow ? "checked" : ""}> Pillow talk truth (from day 2)</label>
     <h3 class="sec">Points</h3>
     <div class="grid2">
-      ${[["flirty", "Flirty"], ["teasing", "Teasing"], ["naughty", "Naughty"], ["custom", "Partner-written bonus"], ["confirm", "Confirmed dare bonus"], ["skip", "Skip"]].map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k] ?? DEFAULT_POINTS[k]}"></label>`).join("")}
+      ${POINT_LABELS.map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k] ?? DEFAULT_POINTS[k]}"></label>`).join("")}
     </div>
     <div class="actions"><button type="button" class="btn go" data-act="savesetup">${first ? "Start the game" : "Save setup"}</button></div>
     ${first ? "" : `
@@ -831,7 +849,7 @@ $("#game").addEventListener("click", async (e) => {
     toast("Swapped. One swap per night."); return;
   }
   if (act === "wild") { const play = curPlay(st); if (play.wild) return; play.wild = { cardId: pickFrom(st, "wild", me() + play.day), played: false }; await savePlay(st, play); return; }
-  if (act === "playwild") { const play = curPlay(st); if (!play.wild || play.wild.played) return; play.wild.played = true; await savePlay(st, play); const w = ALL[play.wild.cardId]; toast(`${w.self >= 0 ? "+" : ""}${w.self} for you${w.partner ? `, ${w.partner >= 0 ? "+" : ""}${w.partner} for ${nameOf(other(me()))}` : ""}`); return; }
+  if (act === "playwild") { const play = curPlay(st); if (!play.wild || play.wild.played) return; play.wild.played = true; await savePlay(st, play); const w = ALL[play.wild.cardId], m = ptsOf(st).wild; toast(`${w.self >= 0 ? "+" : ""}${w.self * m} for you${w.partner ? `, ${w.partner >= 0 ? "+" : ""}${w.partner * m} for ${nameOf(other(me()))}` : ""}`); return; }
   if (act === "redeem" || act === "unredeem") {
     const id = `e${st.epoch}_${me()}`, w = JSON.parse(JSON.stringify(cache.wallet[id] || { player: me(), epoch: st.epoch, redeemed: {} }));
     w.redeemed = w.redeemed || {}; if (act === "redeem") w.redeemed[el.dataset.i] = true; else delete w.redeemed[el.dataset.i];

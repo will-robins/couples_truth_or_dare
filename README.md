@@ -38,18 +38,24 @@ Cards start face-down. Tap a card to turn it over.
 
 ## Points
 
-| Card | Points |
+| Card | Truth | Dare |
+|---|---|---|
+| Flirty | 10 | 15 |
+| Teasing | 15 | 20 |
+| Naughty | 25 | 40 |
+
+| Extra | Points |
 |---|---|
-| Flirty | 1 |
-| Teasing | 2 |
-| Naughty | 3 |
-| Partner-written card | +1 |
-| Dare confirmed by your partner | +1 |
-| Skip | −2 |
+| Partner-written card | +5 |
+| Dare confirmed by your partner | +10 |
+| Skip | −15 |
+| Wild cards | card value × 5 (a steal takes 15) |
+
+Every 100 points earns one coupon. All of these can be changed on the Setup tab; scores are recalculated from the new values.
 
 When you mark a dare done, your partner sees a **Confirm it happened** button on their Scores tab (their Today tab shows how many are waiting). Tapping it gives you the bonus. Truths don't need confirming. Confirm before scores lock at 4am after the last night; after that the buttons go away.
 
-Every 10 points earns one coupon. Coupons are kept in the Wallet tab. Tap a coupon to redeem it.
+Coupons are kept in the Wallet tab. Tap a coupon to redeem it.
 
 The day turns over at 4am, so a late night still counts for the day it started. Scores lock at 4am after the last day. Unspent coupons still count when you get home.
 
