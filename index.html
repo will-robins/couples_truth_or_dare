@@ -364,6 +364,8 @@ function ptsOf(st) {
   const o = { ...DEFAULT_POINTS };
   for (const k of Object.keys(o)) if (Number.isFinite(p[k])) o[k] = p[k];
   if (o.coupon < 1) o.coupon = DEFAULT_POINTS.coupon;
+  if (o.skip > 0) o.skip = -o.skip; // a skip always costs
+  if (o.wild < 0) o.wild = 0;
   return o;
 }
 const TIER_KEY = { flirty: "Flirty", teasing: "Teasing", naughty: "Naughty" };
@@ -739,6 +741,7 @@ function viewSetup(first) {
     <label class="check"><input type="checkbox" id="s-night" ${st.slots.night ? "checked" : ""}> Night dare</label>
     <label class="check"><input type="checkbox" id="s-pillow" ${st.slots.pillow ? "checked" : ""}> Pillow talk truth (from day 2)</label>
     <h3 class="sec">Points</h3>
+    <p class="note">Changing these recounts every score so far, including coupons already earned.</p>
     <div class="grid2">
       ${POINT_LABELS.map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k] ?? DEFAULT_POINTS[k]}"></label>`).join("")}
     </div>

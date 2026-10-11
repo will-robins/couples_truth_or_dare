@@ -513,7 +513,7 @@ async function pinSetup(page) {
   await click(B, '[data-act="confirm"]');
   check([...dbStore.keys()].some((k) => /^confirms\/e\d+_riptide$/.test(k)), "db confirm: writes confirms/e{epoch}_riptide");
   await pause(A, 150);
-  eq(await aScore(), before + 1, "db confirm: Coral's score updates live");
+  eq(await aScore(), before + 10, "db confirm: Coral's score updates live (+10)");
   check(/Confirmed by Riptide/.test(await A.textContent("#game")), "db confirm: Coral sees Confirmed by Riptide");
 
   // M1: release nulls the slot (key kept)
