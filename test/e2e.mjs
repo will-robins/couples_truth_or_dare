@@ -64,8 +64,14 @@ async function firstSetup(page, days, pin = "4321") {
   await page.fill("#s-start", "2026-10-11"); await page.fill("#s-days", String(days));
   await click(page, '[data-act="savesetup"]');
   await page.waitForSelector('[data-act="claim"]');
-  await click(page, '[data-act="claim"][data-p="coral"]');
+  await claim(page, "coral");
   await page.waitForSelector(".tabs");
+}
+async function claim(page, seat) {
+  await click(page, `[data-act="claim"][data-p="${seat}"]`);
+  await page.waitForSelector(".tabs, .nick", { timeout: 3000 });
+  if (await page.locator(".nick").count()) await click(page, `.nick[data-n="${seat === "coral" ? "Coral" : "Riptide"}"]`);
+  await page.waitForSelector(".tabs", { timeout: 3000 });
 }
 async function slots(page) {
   return page.$$eval(".slot:not(.wild)", (els) => els.map((e) => ({
@@ -229,7 +235,7 @@ for (let d = 1; d <= 6; d++) {
     // switch to Riptide
     await click(page, '[data-tab="settings"]');
     await click(page, '[data-act="release"]');
-    await click(page, '[data-act="claim"][data-p="riptide"]');
+    await claim(page, "riptide");
     await page.waitForSelector(".tabs");
     check((await page.textContent(".who")).includes("Riptide"), "now playing as Riptide");
     await setDay(page, 4);
@@ -240,7 +246,7 @@ for (let d = 1; d <= 6; d++) {
     // back to Coral
     await click(page, '[data-tab="settings"]');
     await click(page, '[data-act="release"]');
-    await click(page, '[data-act="claim"][data-p="coral"]');
+    await claim(page, "coral");
     await page.waitForSelector(".tabs");
   }
 }
@@ -261,7 +267,7 @@ await click(page, '[data-act="addcard"]');
 eq(await page.locator('input[name="wkind"]:checked').getAttribute("value"), "night", "write form keeps kind after render");
 eq(await page.locator('input[name="wtier"]:checked').getAttribute("value"), "naughty", "write form keeps tier after render");
 eq(await page.inputValue("#w-text"), "", "write box cleared after adding");
-await click(page, '[data-tab="settings"]'); await click(page, '[data-act="release"]'); await click(page, '[data-act="claim"][data-p="riptide"]');
+await click(page, '[data-tab="settings"]'); await click(page, '[data-act="release"]'); await claim(page, "riptide");
 await page.waitForSelector(".tabs");
 await setDay(page, 1);
 await click(page, '.slot:has([data-slot="night"]) [data-act="flip"]');
@@ -282,7 +288,7 @@ await setDay(pt, 5);
 await click(pt, '.slot:has([data-slot="night"]) [data-act="flip"]');
 check(/tied/.test((await slots(pt)).find((s) => s.name === "Winner's Choice night").text), "tie going into WC night");
 await completeAll(pt, 5);
-await click(pt, '[data-tab="settings"]'); await click(pt, '[data-act="release"]'); await click(pt, '[data-act="claim"][data-p="riptide"]');
+await click(pt, '[data-tab="settings"]'); await click(pt, '[data-act="release"]'); await claim(pt, "riptide");
 await pt.waitForSelector(".tabs");
 await setDay(pt, 5);
 await click(pt, '.slot:has([data-slot="night"]) [data-act="flip"]');
@@ -326,7 +332,7 @@ console.log("Partner confirm");
   await firstSetup(pc, 6);
   await setDay(pc, 1);
   const sec = (k) => `.slot:has([data-slot="${k}"])`;
-  const swap = async (p) => { await click(pc, '[data-tab="settings"]'); await click(pc, '[data-act="release"]'); await click(pc, `[data-act="claim"][data-p="${p}"]`); await pc.waitForSelector(".tabs"); await click(pc, '[data-tab="today"]'); };
+  const swap = async (p) => { await click(pc, '[data-tab="settings"]'); await click(pc, '[data-act="release"]'); await claim(pc, p); await click(pc, '[data-tab="today"]'); };
   const toConfirm = async () => { const b = pc.locator('.partnerline [data-tab="scores"]'); return (await b.count()) ? await b.textContent() : null; };
   await click(pc, `${sec("day")} [data-act="flip"]`);
   const cardText = (await slots(pc)).find((s) => s.name === "Daytime dare").text;
@@ -423,7 +429,7 @@ async function pinSetup(page) {
   await A.fill("#s-start", "2026-10-11"); await A.fill("#s-days", "6");
   await click(A, '[data-act="savesetup"]'); await A.waitForSelector('[data-act="claim"]');
   check(dbStore.has("game/state"), "db: setup creates game/state");
-  await click(A, '[data-act="claim"][data-p="coral"]'); await A.waitForSelector(".tabs");
+  await claim(A, "coral"); await A.waitForSelector(".tabs");
   const ck = dbStore.get("game/state").claims.coral;
   check(/^u_a:/.test(ck), "db: coral claimed with uid:device key");
 
@@ -432,7 +438,7 @@ async function pinSetup(page) {
   check((await B.locator("#s-start").count()) === 0, "db: second phone sees the picker, not setup");
   const cb = B.locator('[data-act="claim"][data-p="coral"]');
   check(/Taken/.test(await cb.textContent()) && !(await cb.isDisabled()), "db: taken slot is tappable and labelled Taken");
-  await click(B, '[data-act="claim"][data-p="riptide"]'); await B.waitForSelector(".tabs");
+  await claim(B, "riptide"); await B.waitForSelector(".tabs");
 
   // flip persists
   await click(A, '[data-tab="today"]'); await click(A, '[data-act="flip"]');
@@ -467,6 +473,94 @@ async function pinSetup(page) {
   check(/^u_a:/.test(cl.riptide) && cl.coral === null, "db: second tap takes over riptide");
   check((await A.locator(".tabs").count()) === 1 && (await B.locator('[data-act="claim"]').count()) === 2, "db: A plays, B is bounced to picker");
   await A.context().close(); await B.context().close();
+
+  // (6) db mode: nickname chosen on one phone shows live on the other
+  {
+    const A2 = await newDbPage("u_a"), B2 = await newDbPage("u_b");
+    dbStore.clear(); await dbBroadcast();
+    await pinSetup(A2); await A2.waitForSelector("#s-start");
+    await A2.fill("#s-start", "2026-10-11"); await A2.fill("#s-days", "6");
+    await click(A2, '[data-act="savesetup"]'); await A2.waitForSelector('[data-act="claim"]');
+    await pinSetup(B2); await B2.waitForSelector('[data-act="claim"]');
+    await click(A2, '[data-act="claim"][data-p="coral"]'); await A2.waitForSelector(".nick");
+    await click(B2, '[data-act="claim"][data-p="riptide"]'); await B2.waitForSelector(".nick");
+    await A2.fill("#nick-own", "Sandbar"); await click(A2, '[data-act="nickown"]'); await A2.waitForSelector(".tabs");
+    await pause(B2, 200);
+    check(dbStore.get("game/state").names?.coral === "Sandbar", "db nick: names.coral stored");
+    check(await B2.locator(".nick[data-n=\"Mermaid\"]").count() === 1, "db nick: B still on picker");
+    await B2.fill("#nick-own", "sandbar"); await click(B2, '[data-act="nickown"]');
+    check(/already has that name/.test(await B2.textContent("#toast")), "db nick: B cannot take A's name");
+    await B2.fill("#nick-own", "Driftwood"); await click(B2, '[data-act="nickown"]'); await B2.waitForSelector(".tabs");
+    await click(B2, '[data-tab="today"]'); await click(A2, '[data-tab="today"]'); await pause(A2, 200);
+    check(/Driftwood/.test(await A2.textContent(".partnerline")), "db nick: A sees B's nickname live");
+    check(/Sandbar/.test(await B2.textContent(".partnerline")), "db nick: B sees A's nickname live");
+    eq(await A2.textContent(".who b"), "Sandbar", "db nick: A header");
+    await A2.context().close(); await B2.context().close(); dbPages.delete(A2); dbPages.delete(B2);
+  }
+}
+
+/* ===================== nicknames ===================== */
+console.log("Nicknames");
+{
+  const np = await newPage();
+  await np.fill("#d-input", "##"); await np.press("#d-input", "Enter");
+  await np.waitForSelector("#d-pin:not([hidden])");
+  await np.fill("#d-pin-a", "4321"); await np.fill("#d-pin-b", "4321"); await click(np, "#d-pin-save");
+  await np.waitForSelector("#s-start");
+  await np.check("#s-partial"); await np.fill("#s-start", "2026-10-11"); await np.fill("#s-days", "6");
+  await click(np, '[data-act="savesetup"]'); await np.waitForSelector('[data-act="claim"]');
+  eq((await np.textContent('[data-act="claim"][data-p="coral"]')).includes("Player 1"), true, "pick screen shows Player 1");
+  check((await np.textContent('[data-act="claim"][data-p="riptide"]')).includes("Player 2"), "pick screen shows Player 2");
+  // (1) picker after first claim, no tab bar
+  await click(np, '[data-act="claim"][data-p="coral"]');
+  await np.waitForSelector(".nick");
+  eq(await np.locator(".tabs").count(), 0, "nickname screen has no tab bar");
+  eq(await np.locator(".nick").count(), 12, "12 preset nicknames");
+  eq(await np.locator("#nick-own").count(), 1, "custom nickname input present");
+  await np.screenshot({ path: join(SHOTS, "nick.png") }); await overflow(np, "nick picker");
+  // (2) custom name
+  await np.fill("#nick-own", "Sandbar"); await click(np, '[data-act="nickown"]');
+  await np.waitForSelector(".tabs");
+  eq(await np.textContent(".who b"), "Sandbar", "header shows custom nickname");
+  // partner-facing: other seat sees Sandbar disabled-free? (partner name shown in text and disabled in their picker)
+  await click(np, '[data-tab="settings"]'); await click(np, '[data-act="release"]');
+  await np.waitForSelector('[data-act="claim"]');
+  check((await np.textContent('[data-act="claim"][data-p="coral"]')).includes("Sandbar"), "pick screen shows chosen nickname for the seat");
+  await click(np, '[data-act="claim"][data-p="riptide"]'); await np.waitForSelector(".nick");
+  eq(await np.locator(".tabs").count(), 0, "no tab bar for second seat picker");
+  eq(await np.locator(".nick[disabled]").count(), 0, "custom partner name is not a preset, nothing disabled");
+  // (4) duplicate of partner's name refused, case-insensitive
+  await np.fill("#nick-own", "SANDBAR"); await click(np, '[data-act="nickown"]');
+  check(/already has that name/.test(await np.textContent("#toast")), "duplicate of partner's name refused with toast");
+  eq(await np.locator(".tabs").count(), 0, "still on picker after refused duplicate");
+  // (3) sanitization
+  await np.fill("#nick-own", "<b>x</b>"); await click(np, '[data-act="nickown"]');
+  await np.waitForSelector(".tabs");
+  eq(await np.textContent(".who b"), "bxb", "sanitized name strips < > /");
+  eq(await np.locator(".who b b, .who > b > *").count(), 0, "no HTML injected in .who");
+  eq(await np.locator("#game b").evaluateAll((e) => e.filter((x) => x.textContent === "x").length), 0, "no <b>x</b> element created");
+  // partner-facing text: Riptide seat's partner is Sandbar
+  await click(np, '[data-tab="today"]');
+  check(/Sandbar/.test(await np.textContent(".partnerline")), "partnerline shows partner's custom nickname");
+  await click(np, '[data-tab="scores"]');
+  check(/Sandbar/.test(await np.textContent(".stack")) && /bxb/.test(await np.textContent(".stack")), "Scores shows both nicknames");
+  // (5) Change nickname from Setup, and Cancel
+  await click(np, '[data-tab="settings"]'); await click(np, '[data-act="gonick"]');
+  await np.waitForSelector(".nick");
+  eq(await np.locator(".tabs").count(), 1, "tab bar kept when changing nickname");
+  check(await np.locator(".nick.on").count() === 0, "custom name not highlighted among presets");
+  await click(np, '[data-tab="settings"]');
+  eq(await np.locator('[data-act="gonick"]').count(), 1, "Cancel returns to Setup");
+  await click(np, '[data-act="gonick"]');
+  await click(np, '.nick[data-n="Mermaid"]');
+  eq(await np.textContent(".who b"), "Mermaid", "preset nickname applied from Setup");
+  eq(await np.locator('[data-act="gonick"]').count(), 1, "returns to Setup after choosing");
+  check((await np.textContent(".stack")).includes("Switch player"), "Switch player button label");
+  // coral seat: Mermaid is disabled for partner
+  await click(np, '[data-act="release"]'); await claim(np, "coral");
+  await click(np, '[data-tab="settings"]'); await click(np, '[data-act="gonick"]');
+  eq(await np.locator('.nick[data-n="Mermaid"]').isDisabled(), true, "partner's preset nickname disabled");
+  await np.context().close();
 }
 
 /* ===================== wrap up ===================== */
