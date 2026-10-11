@@ -445,7 +445,12 @@ function confirmBonus(st, pl, day, key, sl) { return confirmedBy(st, pl, day, ke
 function toConfirm(st, pl) {
   // partner's finished dares this player hasn't confirmed yet
   const p = other(pl), out = [];
-  epochPlays(st).forEach((x) => { if (x.player !== p) return; Object.entries(x.slots || {}).forEach(([k, sl]) => { if (DARE_KEYS.has(k) && sl.status === "done" && !confirmedBy(st, p, x.day, k, sl)) out.push(x.day + k); }); });
+  if (dayNum(st) > st.days) return 0; // scores are locked
+  epochPlays(st).forEach((x) => {
+    if (x.player !== p) return;
+    const active = new Set(slotsFor(st, x.day).map((s) => s.key));
+    Object.entries(x.slots || {}).forEach(([k, sl]) => { if (active.has(k) && DARE_KEYS.has(k) && sl.status === "done" && !confirmedBy(st, p, x.day, k, sl)) out.push(x.day + k); });
+  });
   return out.length;
 }
 function scoreOf(st, pl, opts = {}) {
@@ -560,7 +565,7 @@ function slotCard(st, play, s, d) {
   const top = (chip) => `<div class="slot-top"><span class="slot-name">${esc(s.name)}</span>${chip}</div>`;
   if (!x || !x.cardId) return `<section class="slot">${top(`<span class="chip ${s.tier}">${TIER_LABEL[s.tier]}</span>`)}<button type="button" class="facedown" data-act="flip" data-slot="${s.key}"><span>Tap to turn over</span></button></section>`;
   const c = cardById(x.cardId) || { tier: s.tier, text: "(missing card)" };
-  const bonus = confirmBonus(st, play.player, d, s.key, x), partner = PLAYERS[other(play.player)];
+  const bonus = confirmBonus(st, play.player, d, s.key, x), confirmed = confirmedBy(st, play.player, d, s.key, x), partner = PLAYERS[other(play.player)];
   const statusChip = x.status === "done" ? `<span class="chip done">Done +${slotPoints(st, x) + bonus}</span>` : x.status === "skipped" ? `<span class="chip skipped">Skipped ${slotPoints(st, x)}</span>` : `<span class="chip ${c.tier}">${TIER_LABEL[c.tier] || ""}</span>`;
   let inner = `<p class="cardtext">${esc(c.text)}</p>`;
   if (c.codeWord) inner += `<div class="code">Code word: ${esc(c.codeWord)}</div>`;
@@ -581,7 +586,7 @@ function slotCard(st, play, s, d) {
   } else if (x.status === "done") {
     if (x.answer) inner += `<div class="answer">Your answer: ${esc(x.answer)}</div>`;
     if (c.wc === "choice" && x.choice != null) inner += `<div class="answer">Your pick: ${esc(DECK.winnersChoice[x.choice])}</div>`;
-    if (DARE_KEYS.has(s.key)) inner += bonus ? `<div class="from">Confirmed by ${partner}, +${bonus} bonus</div>` : `<div class="from">Waiting for ${partner} to confirm (+${confirmPts(st)} bonus when they do)</div>`;
+    if (DARE_KEYS.has(s.key)) inner += confirmed ? `<div class="from">Confirmed by ${partner}, +${bonus} bonus</div>` : `<div class="from">Waiting for ${partner} to confirm (+${confirmPts(st)} bonus when they do)</div>`;
     inner += `<div class="actions"><button type="button" class="btn small ghost" data-act="undo" data-slot="${s.key}">Undo</button></div>`;
   } else if (x.status === "skipped") {
     const f = ALL[x.forfeitId];
@@ -625,7 +630,8 @@ function viewScores(st) {
         }
         const bonus = confirmBonus(st, p, day, s.key, sl);
         if (DARE_KEYS.has(s.key) && sl.status === "done") {
-          if (bonus) extra += `<div class="from">Confirmed by ${PLAYERS[other(p)]}, +${bonus}</div>`;
+          if (confirmedBy(st, p, day, s.key, sl)) extra += `<div class="from">Confirmed by ${PLAYERS[other(p)]}, +${bonus}</div>`;
+          else if (dayNum(st) > st.days) extra += `<div class="from">Not confirmed</div>`;
           else if (p === pl) extra += `<div class="from">Waiting for ${PLAYERS[other(p)]} to confirm</div>`;
           else extra += `<div class="actions"><button type="button" class="btn small go" data-act="confirm" data-p="${p}" data-day="${day}" data-key="${s.key}">Confirm it happened (+${confirmPts(st)} for ${PLAYERS[p]})</button></div>`;
         }
@@ -696,7 +702,7 @@ function viewSetup(first) {
     <label class="check"><input type="checkbox" id="s-pillow" ${st.slots.pillow ? "checked" : ""}> Pillow talk truth (from day 2)</label>
     <h3 class="sec">Points</h3>
     <div class="grid2">
-      ${[["flirty", "Flirty"], ["teasing", "Teasing"], ["naughty", "Naughty"], ["custom", "Partner-written bonus"], ["confirm", "Confirmed dare bonus"], ["skip", "Skip"]].map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k]}"></label>`).join("")}
+      ${[["flirty", "Flirty"], ["teasing", "Teasing"], ["naughty", "Naughty"], ["custom", "Partner-written bonus"], ["confirm", "Confirmed dare bonus"], ["skip", "Skip"]].map(([k, l]) => `<label>${l}<input class="g" type="number" id="s-p-${k}" value="${pts[k] ?? DEFAULT_POINTS[k]}"></label>`).join("")}
     </div>
     <div class="actions"><button type="button" class="btn go" data-act="savesetup">${first ? "Start the game" : "Save setup"}</button></div>
     ${first ? "" : `
@@ -752,6 +758,7 @@ $("#game").addEventListener("click", async (e) => {
   if (act === "confirm") {
     const p = el.dataset.p, day = +el.dataset.day, key = el.dataset.key;
     if (p === me() || !DARE_KEYS.has(key)) return;
+    if (dayNum(st) > st.days) { toast("Scores are locked. The trip is over."); return; }
     const sl = ((playOf(st, p, day) || {}).slots || {})[key]; if (!sl || sl.status !== "done") return;
     const id = `e${st.epoch}_${me()}`, doc = JSON.parse(JSON.stringify(cache.confirms[id] || { player: me(), epoch: st.epoch, map: {} }));
     doc.map = doc.map || {}; doc.map[`${p}-${day}-${key}`] = sl.cardId;

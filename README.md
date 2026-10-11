@@ -47,7 +47,7 @@ Cards start face-down. Tap a card to turn it over.
 | Dare confirmed by your partner | +1 |
 | Skip | −2 |
 
-When you mark a dare done, your partner sees a **Confirm it happened** button on their Scores tab (their Today tab shows how many are waiting). Tapping it gives you the bonus. Truths don't need confirming.
+When you mark a dare done, your partner sees a **Confirm it happened** button on their Scores tab (their Today tab shows how many are waiting). Tapping it gives you the bonus. Truths don't need confirming. Confirm before scores lock at 4am after the last night; after that the buttons go away.
 
 Every 10 points earns one coupon. Coupons are kept in the Wallet tab. Tap a coupon to redeem it.
 
