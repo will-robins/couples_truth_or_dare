@@ -180,7 +180,7 @@ for (let d = 1; d <= 6; d++) {
     note(after.text, "d3 swapped night");
     // skip / undo on daytime dare
     const s0 = await scores(page);
-    eq((await page.textContent('.slot:has([data-slot="day"]) [data-act="skip"]')).trim(), "Skip (-15)", "skip label shows Skip (-15)");
+    eq((await page.textContent('.slot:has([data-slot="day"]) [data-act="skip"]')).trim(), "Skip -15", "skip label shows Skip -15");
     await click(page, '.slot:has([data-slot="day"]) [data-act="skip"]');
     check(await page.locator(".forfeit").count() === 1, "skip shows a forfeit");
     const s1 = await scores(page);
@@ -424,7 +424,7 @@ console.log("Points scale");
   });
   await setDay(op, 1);
   await flipAll(op);
-  eq((await op.textContent('.slot:has([data-slot="day"]) [data-act="skip"]')).trim(), "Skip (-15)", "old points: skip label uses new default");
+  eq((await op.textContent('.slot:has([data-slot="day"]) [data-act="skip"]')).trim(), "Skip -15", "old points: skip label uses new default");
   const o0 = (await scores(op)).coral;
   await op.fill("#ans-d1-truth", "a"); await click(op, '.slot:has([data-slot="truth"]) [data-act="done"]');
   eq((await scores(op)).coral - o0, 10, "old-style saved points scored with new defaults (flirty truth +10)");

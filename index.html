@@ -153,6 +153,41 @@ h3.sec { font-size: .8rem; letter-spacing: 1.4px; text-transform: uppercase; col
 .nick[disabled] { opacity: .4; cursor: default; }
 .empty { color: var(--foam-dim); font-size: .92rem; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; line-height: 1.45; }
 @media (max-width: 380px) { .grid2, .scores { grid-template-columns: 1fr; } }
+
+/* ---------- phone fit ----------
+   iOS Safari zooms the page when a focused field's text is under 16px and never zooms back,
+   so every field is 16px. The rest tightens spacing so a day's cards fit with less scrolling. */
+input, select, textarea { font-size: 16px !important; }
+#decoy { padding-block: 12px 32px; }
+.d-sub { margin: 2px 0 12px; }
+.d-list li { padding: 9px 12px; }
+#game { padding-block: 0 84px; }
+.g-head { padding-block: 10px 8px; }
+.g-head h1 { font-size: 1.3rem; }
+.lockbtn { padding: 6px 11px; }
+.dayline { margin: 12px 0 2px; }
+.dayline h2 { font-size: 1.45rem; }
+.tide { margin: 6px 0 10px; }
+.note, .partnerline { margin-bottom: 10px; }
+.stack { gap: 10px; }
+.slot { padding: 12px; gap: 8px; border-radius: 12px; }
+.facedown { min-height: 64px; }
+.cardtext { font-size: 1rem; line-height: 1.42; }
+.btn { padding: 9px 12px; }
+.tabs button { padding: 10px 2px 11px; }
+.scores { margin: 12px 0; gap: 10px; }
+.score { padding: 12px; }
+.score .n { font-size: 2.1rem; }
+h3.sec { margin: 16px 0 8px; }
+.hero { padding: 18px 0 4px; }
+.hero h2 { font-size: 1.7rem; }
+.pick button { padding: 16px 10px; }
+.pick button b { font-size: 1.25rem; }
+.nick { padding: 11px 8px; font-size: 1rem; }
+.coupon { padding: 11px 12px; }
+textarea.g { min-height: 64px; }
+.slot .actions { flex-wrap: nowrap; }
+.slot .actions .btn { flex: 1 1 auto; white-space: nowrap; }
 </style>
 
 <div id="decoy">
@@ -617,11 +652,11 @@ function slotCard(st, play, s, d) {
       <textarea class="g" id="${id}" placeholder="Details, or your own plan">${esc(x.answer || "")}</textarea>
       <div class="actions"><button type="button" class="btn go" data-act="wcdone" data-slot="${s.key}">Lock in my pick</button></div>`;
     } else if (s.kind === "truth") {
-      inner += `<textarea class="g" id="${id}" placeholder="Your answer. Your partner can read it on the Scores tab, or skip typing and say it out loud.">${esc(x.answer || "")}</textarea>
-      <div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Answered</button><button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${ptsOf(st).skip})</button></div>`;
+      inner += `<textarea class="g" id="${id}" placeholder="Type it, or just say it out loud">${esc(x.answer || "")}</textarea>
+      <div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Answered</button><button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip ${ptsOf(st).skip}</button></div>`;
     } else {
       const canSwap = s.key === "night" && !x.swapped && !c.wc;
-      inner += `<div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Done it</button>${canSwap ? `<button type="button" class="btn" data-act="swap" data-slot="${s.key}">Not tonight (free swap)</button>` : ""}<button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip (${ptsOf(st).skip})</button></div>`;
+      inner += `<div class="actions"><button type="button" class="btn go" data-act="done" data-slot="${s.key}">Done it</button>${canSwap ? `<button type="button" class="btn" data-act="swap" data-slot="${s.key}">Not tonight</button>` : ""}<button type="button" class="btn ghost" data-act="skip" data-slot="${s.key}">Skip ${ptsOf(st).skip}</button></div>`;
     }
   } else if (x.status === "done") {
     if (x.answer) inner += `<div class="answer">Your answer: ${esc(x.answer)}</div>`;
