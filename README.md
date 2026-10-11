@@ -30,9 +30,9 @@ Cards start face-down. Tap a card to turn it over.
 - **Done** scores the card.
 - **Skip** costs points and draws a forfeit. The forfeit must be done the same day. Mark it paid to clear it.
 - **Not tonight** swaps a night dare once per night for free.
-- After you clear all cards for the day, you unlock one wild card.
+- After you clear all cards for the day, you unlock one wild card. A skipped card counts as cleared once its forfeit is marked paid.
 
-**Winner's Choice** is on night 5 by default. The leader picks the night's dare. The other player says yes.
+**Winner's Choice** is on night 5 by default. The leader picks the night's dare. The other player says yes. The leader is decided by scores from before that day, so nothing you do that day can change it.
 
 **The last night** is night 6 by default. It is a short, quiet dare for packing night.
 
@@ -48,7 +48,7 @@ Cards start face-down. Tap a card to turn it over.
 
 Every 10 points earns one coupon. Coupons are kept in the Wallet tab. Tap a coupon to redeem it.
 
-Scores lock after the last day. Unspent coupons still count when you get home.
+The day turns over at 4am, so a late night still counts for the day it started. Scores lock at 4am after the last day. Unspent coupons still count when you get home.
 
 ## Writing cards for each other
 

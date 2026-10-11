@@ -192,7 +192,10 @@ async function sha(s) {
 }
 function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function parseYmd(s) { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); }
-function today() { const dbg = LS.get("ptl_debug_today", null); return dbg ? parseYmd(dbg) : parseYmd(ymd(new Date())); }
+function today() {
+  const dbg = location.protocol === "file:" ? LS.get("ptl_debug_today", null) : null; // test override: file:// only
+  return dbg ? parseYmd(dbg) : parseYmd(ymd(new Date(Date.now() - 4 * 3600e3))); // the day turns over at 4am
+}
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 const fmtDate = (d) => d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
@@ -217,7 +220,7 @@ $("#d-form").addEventListener("submit", async (e) => {
   const inp = $("#d-input"); const v = inp.value.trim(); if (!v) return;
   const pinHash = LS.get("ptl_pin", null);
   if (v === "##" && !pinHash) { inp.value = ""; showPinSetup(); return; }
-  if (pinHash && /^\d{4,8}$/.test(v) && (await sha(v)) === pinHash) { inp.value = ""; unlock(); return; }
+  if (pinHash && /^\d{4,8}$/.test(v)) { const ok = (await sha(v)) === pinHash; inp.value = ""; if (ok) unlock(); return; } // wrong PIN: clear, don't list it
   items.push({ t: v, d: false }); saveItems(); inp.value = ""; renderDecoy();
 });
 function showPinSetup(msg) { $("#d-pin").hidden = false; $("#d-pin-msg").textContent = msg || "Choose a PIN (4–8 digits)."; $("#d-pin-a").value = ""; $("#d-pin-b").value = ""; $("#d-pin-a").focus(); }
@@ -240,6 +243,8 @@ function unlock() {
 }
 function lock() {
   unlocked = false; clearTimeout(idleTimer);
+  clearTimeout(toastTimer); const tt = $("#toast"); if (tt) tt.remove();
+  revealed = new Set(); pendingConfirm = null; dirty = false;
   const g = $("#game"); g.innerHTML = ""; g.hidden = true;
   document.body.classList.remove("in-game"); $("#decoy").hidden = false; $("#d-pin").hidden = true;
   renderDecoy(); window.scrollTo(0, 0);
@@ -253,12 +258,23 @@ let db = null, uid = null, mode = "connecting";
 const writeChains = {};
 function persistLocal() { LS.set("ptl_local", { state: cache.state, plays: cache.plays, custom: cache.custom, wallet: cache.wallet }); }
 function loadLocal() { const l = LS.get("ptl_local", null); if (l) Object.assign(cache, { state: l.state || null, plays: l.plays || {}, custom: l.custom || {}, wallet: l.wallet || {} }); }
+const saveErr = (e) => toast(e && e.code === "quota_exceeded" ? "Storage is full." : "Couldn't save. Check your connection and try again.");
 function putDoc(col, id, data) {
   // col: "game" (id "state"), "plays", "custom", "wallet"
   if (col === "game") cache.state = data; else cache[col][id] = data;
   if (mode !== "db") { persistLocal(); render(); return Promise.resolve(); }
   const path = col + "/" + id;
-  const run = () => db.doc(path).set(data).catch((e) => { toast(e && e.code === "quota_exceeded" ? "Storage is full." : "Couldn't save. Check your connection and try again."); });
+  const run = () => db.doc(path).set(data).catch(saveErr);
+  writeChains[path] = (writeChains[path] || Promise.resolve()).then(run);
+  render(); return writeChains[path];
+}
+function updateState(patch) {
+  // merge fields into game/state: a field-level update in db mode (when the doc exists), a merge + persist locally
+  const exists = !!cache.state;
+  cache.state = { ...(cache.state || {}), ...patch };
+  if (mode !== "db") { persistLocal(); render(); return Promise.resolve(); }
+  const path = "game/state", full = cache.state;
+  const run = () => (exists ? db.doc(path).update(patch) : db.doc(path).set(full)).catch(saveErr);
   writeChains[path] = (writeChains[path] || Promise.resolve()).then(run);
   render(); return writeChains[path];
 }
@@ -268,13 +284,20 @@ function delDoc(col, id) {
   db.doc(col + "/" + id).delete().catch(() => toast("Couldn't delete. Try again."));
   render();
 }
-function subscribeAll() {
-  db.doc("game/state").onSnapshot((s) => { cache.state = s.exists ? s.data() : null; render(); }, onDbErr);
-  ["plays", "custom", "wallet"].forEach((col) => {
-    db.collection(col).onSnapshot((qs) => { const m = {}; qs.docs.forEach((d) => { m[d.id] = d.data(); }); cache[col] = m; render(); }, onDbErr);
+const retried = {};
+function listen(key, ref, onData) {
+  ref.onSnapshot((snap) => { retried[key] = false; onData(snap); }, (e) => {
+    if (e && e.code === "unavailable" && !retried[key]) { retried[key] = true; listen(key, ref, onData); return; } // one re-subscribe first
+    onDbErr();
   });
 }
-function onDbErr() { mode = "local-fallback"; loadLocal(); render(); }
+function subscribeAll() {
+  listen("state", db.doc("game/state"), (s) => { cache.state = s.exists ? s.data() : null; render(); });
+  ["plays", "custom", "wallet"].forEach((col) => {
+    listen(col, db.collection(col), (qs) => { const m = {}; qs.docs.forEach((d) => { m[d.id] = d.data(); }); cache[col] = m; render(); });
+  });
+}
+function onDbErr() { if (mode === "local-fallback") return; mode = "local-fallback"; loadLocal(); render(); } // header shows the "Not syncing" note
 async function initStore() {
   const c = window.claude;
   if (!c || typeof c.use !== "function") { mode = "local"; loadLocal(); render(); return; }
@@ -289,17 +312,18 @@ async function initStore() {
 /* ================= game model ================= */
 const DEFAULT_POINTS = { flirty: 1, teasing: 2, naughty: 3, custom: 1, skip: -2 };
 function defaultState() {
-  return { startDate: ymd(today()), days: 6, wcNight: 5, lightFinal: true, partialFirst: true,
+  return { startDate: ymd(today()), days: 6, wcNight: 5, lightFinal: true, partialFirst: new Date().getHours() >= 12,
     slots: { truth: true, day: true, night: true, pillow: true }, points: { ...DEFAULT_POINTS }, claims: {}, epoch: 1 };
 }
 const S = () => cache.state;
+function devId() { let d = LS.get("ptl_dev", null); if (!d) { d = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); LS.set("ptl_dev", d); } return d; }
+const claimKey = () => (uid || "anon") + ":" + devId();
 function me() {
   const st = S(); if (!st) return null;
-  if (uid && st.claims) { for (const p of ["coral", "riptide"]) if (st.claims[p] === uid) return p; }
-  if (mode === "db" && uid) return null;
+  if (mode === "db") { const k = claimKey(), c = st.claims || {}; for (const p of ["coral", "riptide"]) if (c[p] === k) return p; return null; }
   const lp = LS.get("ptl_player", null); return lp && PLAYERS[lp] ? lp : null;
 }
-function dayNum(st) { return Math.floor((today() - parseYmd(st.startDate)) / 864e5) + 1; }
+function dayNum(st) { return Math.round((today() - parseYmd(st.startDate)) / 864e5) + 1; }
 function progress(st, d) { return st.days > 1 ? Math.min(1, Math.max(0, (d - 1) / (st.days - 1))) : 1; }
 function isWC(st, d) { return +st.wcNight > 0 && +st.wcNight <= st.days && d === +st.wcNight; }
 function isLightFinal(st, d) { return st.lightFinal && d === st.days && !isWC(st, d); }
@@ -337,22 +361,29 @@ function cardById(id) {
 }
 function seededOrder(list, seed) { return list.slice().sort((a, b) => hashStr(seed + a.id) - hashStr(seed + b.id)); }
 
+const TIER_RANK = { flirty: 1, teasing: 2, naughty: 3 };
+function nightProgress(st, d) {
+  // night dares ramp over the regular nights only: the last one that isn't Winner's Choice or the light final maps to 1.0
+  let last = 0; for (let i = st.days; i >= 1; i--) if (!isWC(st, i) && !isLightFinal(st, i)) { last = i; break; }
+  return last > 1 ? Math.min(1, Math.max(0, (d - 1) / (last - 1))) : 1;
+}
 function pickCard(st, pl, d, slot, exclude) {
   const used = usedIds(st); if (exclude) used.add(exclude);
-  const p = progress(st, d);
-  // partner-written cards first
+  const p = slot.pool === "night" ? nightProgress(st, d) : progress(st, d);
+  // partner-written cards first (never for the quickie or Winner's Choice; never hotter than the slot)
   const kindFor = slot.pool === "truth" ? "truth" : slot.pool === "day" ? "day" : "night";
-  const customs = Object.entries(cache.custom).filter(([id, c]) => c && c.target === pl && c.kind === kindFor && c.usedEpoch !== st.epoch && !used.has("custom:" + id))
-    .sort((a, b) => (a[1].created || 0) - (b[1].created || 0));
+  const customs = slot.pool === "quick" || slot.pool === "wc" ? [] : Object.entries(cache.custom).filter(([id, c]) => c && c.target === pl && c.kind === kindFor && c.usedEpoch !== st.epoch && !used.has("custom:" + id)
+    && (TIER_RANK[c.tier] || 2) <= TIER_RANK[slot.tier]).sort((a, b) => (a[1].created || 0) - (b[1].created || 0));
   if (customs.length) return { cardId: "custom:" + customs[0][0], customId: customs[0][0] };
   const pool = DECK[slot.pool].filter((c) => c.tier === slot.tier);
-  const seed = st.startDate + pl + st.epoch;
-  let el = pool.filter((c) => !used.has(c.id) && (c.minProgress || 0) <= p + 1e-9);
-  if (!el.length) el = pool.filter((c) => !used.has(c.id));
+  const seed = st.startDate + pl + st.epoch + d + slot.key;
+  const mp = (c) => c.minProgress || 0;
+  let el = pool.filter((c) => !used.has(c.id) && mp(c) <= p + 1e-9);
+  if (el.length) return { cardId: seededOrder(el, seed).sort((a, b) => mp(b) - mp(a))[0].id }; // furthest-along card that's unlocked
+  el = pool.filter((c) => !used.has(c.id));
   if (!el.length) el = pool.filter((c) => c.id !== exclude); // pool exhausted: reuse
   if (!el.length) el = pool;
-  el = seededOrder(el, seed + d + slot.key).sort((a, b) => (b.minProgress || 0) - (a.minProgress || 0));
-  return { cardId: el[0].id };
+  return { cardId: seededOrder(el, seed).sort((a, b) => mp(a) - mp(b))[0].id }; // nothing unlocked: gentlest first
 }
 function pickFrom(st, poolName, seedExtra) {
   const used = usedIds(st);
@@ -370,21 +401,21 @@ function slotPoints(st, sl) {
 function scoreOf(st, pl, opts = {}) {
   let net = 0, gross = 0;
   epochPlays(st).forEach((x) => {
+    if (opts.beforeDay && x.day >= opts.beforeDay) return;
     Object.entries(x.slots || {}).forEach(([k, sl]) => {
       if (x.player !== pl) return;
-      if (opts.excludeDay && x.day === opts.excludeDay && k === "night") return;
       const v = slotPoints(st, sl); net += v; if (v > 0) gross += v;
     });
     if (x.wild && x.wild.played) {
       const w = ALL[x.wild.cardId]; if (!w) return;
       if (x.player === pl) { net += w.self; if (w.self > 0) gross += w.self; }
-      else net += w.partner;
+      else { net += w.partner; if (w.partner > 0) gross += w.partner; }
     }
   });
   return { net, gross };
 }
 function leaderFor(st, d) {
-  const a = scoreOf(st, "coral", { excludeDay: d }).net, b = scoreOf(st, "riptide", { excludeDay: d }).net;
+  const a = scoreOf(st, "coral", { beforeDay: d }).net, b = scoreOf(st, "riptide", { beforeDay: d }).net;
   return a === b ? "tie" : a > b ? "coral" : "riptide";
 }
 
@@ -399,9 +430,14 @@ function toast(msg) {
 }
 
 /* ================= render ================= */
+let dirty = false;
+const skipRestore = new Set();
+const typing = (el) => !!el && /^(TEXTAREA|SELECT)$/.test(el.tagName) || (!!el && el.tagName === "INPUT" && !/^(checkbox|radio|button|submit)$/.test(el.type));
 function render() {
   if (!unlocked) return;
   const g = $("#game");
+  if (typing(document.activeElement) && g.contains(document.activeElement)) { dirty = true; return; } // don't clobber what's being typed
+  dirty = false;
   const keep = captureInputs(g);
   const st = S();
   let body;
@@ -412,8 +448,18 @@ function render() {
   g.innerHTML = header(st) + body + (st && me() ? tabsBar() : "");
   restoreInputs(g, keep);
 }
-function captureInputs(g) { const m = {}; g.querySelectorAll("textarea[id],input[id]:not([type=checkbox]):not([type=radio])").forEach((el) => { m[el.id] = el.value; }); return m; }
-function restoreInputs(g, m) { Object.entries(m).forEach(([id, v]) => { const el = g.querySelector("#" + CSS.escape(id)); if (el && v && !el.dataset.fresh) el.value = v; }); }
+const chkKey = (el) => (el.id ? "#" + el.id : el.name ? el.name + "=" + el.value : null);
+function captureInputs(g) {
+  const m = { v: {}, c: {} };
+  g.querySelectorAll("textarea[id],select[id],input[id]:not([type=checkbox]):not([type=radio])").forEach((el) => { m.v[el.id] = el.value; });
+  g.querySelectorAll("input[type=checkbox],input[type=radio]").forEach((el) => { const k = chkKey(el); if (k) m.c[k] = el.checked; });
+  return m;
+}
+function restoreInputs(g, m) {
+  Object.entries(m.v).forEach(([id, v]) => { const el = g.querySelector("#" + CSS.escape(id)); if (el && !skipRestore.has(id)) el.value = v; });
+  skipRestore.clear();
+  g.querySelectorAll("input[type=checkbox],input[type=radio]").forEach((el) => { const k = chkKey(el); if (k && k in m.c) el.checked = m.c[k]; });
+}
 function header(st) {
   const p = st && me();
   const syncNote = mode === "db" ? "" : mode === "connecting" ? "" : `<div class="sync warn">Not syncing: this phone only. Scores won't reach your partner.</div>`;
@@ -432,7 +478,7 @@ function viewTab(st) {
 }
 function viewPick(st) {
   const c = st.claims || {};
-  const taken = (p) => uid && c[p] && c[p] !== uid;
+  const taken = (p) => mode === "db" && c[p] && c[p] !== claimKey();
   return `<div class="hero"><h2>Who's holding this phone?</h2><p class="note">Pick your code name. Your partner picks the other one on their phone.</p></div>
   <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ${taken(p) ? "disabled" : ""}><b>${PLAYERS[p]}</b><span>${taken(p) ? "Taken" : "Play as " + PLAYERS[p]}</span></button>`).join("")}</div>`;
 }
@@ -451,8 +497,8 @@ function viewToday(st) {
   const pdone = pplay ? Object.values(pplay.slots || {}).filter((x) => x.status === "done" || x.status === "skipped").length : 0;
   let intro = "";
   if (isWC(st, d)) { const L = leaderFor(st, d); intro = `<p class="note">Winner's Choice night. ${L === "tie" ? "You're tied going in, so you each choose one thing." : `${PLAYERS[L]} is in the lead and picks tonight.`}</p>`; }
-  else if (isLightFinal(st, d)) intro = `<p class="note">Last night: packing, early alarm. Tonight's dare is short and quiet. Scores lock at midnight.</p>`;
-  const allResolved = slots.every((s) => { const x = play.slots[s.key]; return x && (x.status === "done" || x.status === "skipped"); });
+  else if (isLightFinal(st, d)) intro = `<p class="note">Last night: packing, early alarm. Tonight's dare is short and quiet. Scores lock at 4am.</p>`;
+  const allResolved = slots.length > 0 && slots.every((s) => { const x = play.slots[s.key]; return x && (x.status === "done" || (x.status === "skipped" && x.forfeitDone)); });
   return `<div class="dayline"><h2>Day ${d} of ${st.days}</h2><span class="date">${esc(fmtDate(addDays(start, d - 1)))}</span></div>${tideBar(st, d)}${intro}
   <p class="partnerline"><b>${PLAYERS[partner]}</b> has finished ${pdone} of ${pslots} today.</p>
   <div class="stack">${slots.map((s) => slotCard(st, play, s, d)).join("")}${allResolved ? wildCard(st, play, d) : ""}</div>`;
@@ -466,7 +512,7 @@ function slotCard(st, play, s, d) {
   let inner = `<p class="cardtext">${esc(c.text)}</p>`;
   if (c.codeWord) inner += `<div class="code">Code word: ${esc(c.codeWord)}</div>`;
   if (c.custom) inner += `<div class="from">Written for you by ${PLAYERS[c.author] || "your partner"}</div>`;
-  const id = `ans-${s.key}`;
+  const id = `ans-d${d}-${s.key}`;
   if (x.status === "open") {
     if (c.wc === "choice") {
       inner += `<div>${DECK.winnersChoice.map((o, i) => `<label class="opt"><input type="radio" name="wcopt" value="${i}" ${x.choice == i ? "checked" : ""}><span>${esc(o)}</span></label>`).join("")}</div>
@@ -485,7 +531,7 @@ function slotCard(st, play, s, d) {
     inner += `<div class="actions"><button type="button" class="btn small ghost" data-act="undo" data-slot="${s.key}">Undo</button></div>`;
   } else if (x.status === "skipped") {
     const f = ALL[x.forfeitId];
-    inner += `<div class="forfeit"><span class="lbl">Forfeit: do it today, no points</span><p class="cardtext">${esc(f ? f.text : "")}</p>
+    inner += `<div class="forfeit"><span class="lbl">Forfeit: pay it up, no points</span><p class="cardtext">${esc(f ? f.text : "")}</p>
       <label class="check"><input type="checkbox" data-act="forfeitdone" data-slot="${s.key}" ${x.forfeitDone ? "checked" : ""}> Forfeit paid</label></div>
       <div class="actions"><button type="button" class="btn small ghost" data-act="undo" data-slot="${s.key}">Undo skip</button></div>`;
   }
@@ -608,27 +654,35 @@ function curPlay(st) { const d = dayNum(st), pl = me(); return JSON.parse(JSON.s
 function slotDef(st, key) { return slotsFor(st, dayNum(st)).find((s) => s.key === key); }
 
 $("#game").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-tab],[data-act]") && typing(document.activeElement)) document.activeElement.blur(); // explicit action: let it render
   const tb = e.target.closest("[data-tab]");
   if (tb) { tab = tb.dataset.tab; LS.set("ptl_tab", tab); pendingConfirm = null; render(); window.scrollTo(0, 0); return; }
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act, st = S();
   if (act === "lock") return lock();
   if (act === "claim") {
-    const p = el.dataset.p; LS.set("ptl_player", p);
-    if (mode === "db" && uid) { const ns = { ...st, claims: { ...(st.claims || {}), [p]: uid } }; for (const q of ["coral", "riptide"]) if (q !== p && ns.claims[q] === uid) delete ns.claims[q]; await putDoc("game", "state", ns); }
-    else render();
+    const p = el.dataset.p;
+    if (mode === "db") {
+      const k = claimKey(), claims = { ...((S() || {}).claims || {}) };
+      if (claims[p] && claims[p] !== k) return render();
+      for (const q of ["coral", "riptide"]) if (claims[q] === k) delete claims[q];
+      claims[p] = k; await updateState({ claims });
+    } else { LS.set("ptl_player", p); render(); }
     return;
   }
   if (act === "savesetup") return saveSetup();
   if (act === "changepin") { lock(); showPinSetup("Choose a new PIN (4–8 digits)."); return; }
   if (act === "release") {
-    LS.del("ptl_player");
-    if (mode === "db" && uid && st) { const ns = { ...st, claims: { ...(st.claims || {}) } }; for (const q of ["coral", "riptide"]) if (ns.claims[q] === uid) delete ns.claims[q]; await putDoc("game", "state", ns); } else render();
+    if (mode === "db") {
+      const k = claimKey(), claims = { ...((S() || {}).claims || {}) };
+      for (const q of ["coral", "riptide"]) if (claims[q] === k) delete claims[q];
+      await updateState({ claims });
+    } else { LS.del("ptl_player"); render(); }
     return;
   }
   if (act === "reset") { pendingConfirm = "reset"; return render(); }
   if (act === "resetno") { pendingConfirm = null; return render(); }
-  if (act === "resetyes") { pendingConfirm = null; await putDoc("game", "state", { ...st, epoch: (st.epoch || 1) + 1 }); tab = "today"; toast("Game reset."); return; }
+  if (act === "resetyes") { pendingConfirm = null; await updateState({ epoch: (S().epoch || 1) + 1 }); tab = "today"; toast("Game reset."); return; }
   if (act === "reveal") { revealed.add(el.dataset.k); return render(); }
   if (!st || !me()) return;
 
@@ -644,8 +698,9 @@ $("#game").addEventListener("click", async (e) => {
   }
   if (act === "done" || act === "wcdone") {
     const play = curPlay(st), k = el.dataset.slot, x = play.slots[k]; if (!x) return;
-    const ta = $("#ans-" + k); if (ta) x.answer = ta.value.trim();
+    const ta = $("#ans-d" + play.day + "-" + k); if (ta) x.answer = ta.value.trim();
     if (act === "wcdone") { const r = document.querySelector('input[name="wcopt"]:checked'); if (!r && !x.answer) { toast("Pick an option or type your plan."); return; } x.choice = r ? +r.value : null; }
+    skipRestore.add("ans-d" + play.day + "-" + k);
     x.status = "done"; x.doneAt = Date.now(); await savePlay(st, play); toast(`+${slotPoints(st, x)} points`); return;
   }
   if (act === "skip") {
@@ -658,7 +713,8 @@ $("#game").addEventListener("click", async (e) => {
     x.status = "open"; delete x.forfeitId; delete x.forfeitDone; await savePlay(st, play); return;
   }
   if (act === "swap") {
-    const play = curPlay(st), s = slotDef(st, el.dataset.slot), x = play.slots[s.key]; if (!x || x.swapped) return;
+    const play = curPlay(st), s = slotDef(st, el.dataset.slot); if (!s) return;
+    const x = play.slots[s.key]; if (!x || x.swapped) return;
     const pick = pickCard(st, me(), play.day, s, x.cardId);
     play.slots[s.key] = { cardId: pick.cardId, status: "open", swapped: true, prev: [x.cardId], at: Date.now() };
     await savePlay(st, play);
@@ -678,14 +734,14 @@ $("#game").addEventListener("click", async (e) => {
     let tier = (document.querySelector('input[name="wtier"]:checked') || {}).value || "teasing";
     if (kind === "day" && tier === "naughty") tier = "teasing";
     const id = "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    $("#w-text").value = ""; $("#w-text").dataset.fresh = "1";
+    $("#w-text").value = ""; skipRestore.add("w-text");
     await putDoc("custom", id, { author: me(), target: other(me()), kind, tier, text: text.slice(0, 600), created: Date.now() });
-    const t = $("#w-text"); if (t) { t.value = ""; delete t.dataset.fresh; }
     toast(kind === "day" && tier === "teasing" && (document.querySelector('input[name="wtier"]:checked') || {}).value === "naughty" ? "Saved as Teasing. Daytime dares stay public-safe." : "Slipped into their deck.");
     return;
   }
   if (act === "delcard") { delDoc("custom", el.dataset.id); return; }
 });
+$("#game").addEventListener("focusout", () => setTimeout(() => { if (dirty && !typing(document.activeElement)) render(); }, 0));
 $("#game").addEventListener("change", async (e) => {
   const el = e.target;
   if (el.dataset && el.dataset.act === "forfeitdone") { const st = S(), play = curPlay(st), x = play.slots[el.dataset.slot]; if (!x) return; x.forfeitDone = el.checked; await savePlay(st, play); }
@@ -701,7 +757,8 @@ async function saveSetup() {
     points: Object.fromEntries(Object.keys(DEFAULT_POINTS).map((k) => [k, num("s-p-" + k, DEFAULT_POINTS[k])])) };
   if (!ns.claims) ns.claims = {}; if (!ns.epoch) ns.epoch = 1;
   const first = !S();
-  await putDoc("game", "state", ns);
+  if (first) await putDoc("game", "state", ns);
+  else await updateState({ startDate, days, wcNight: wc, lightFinal: ns.lightFinal, partialFirst: ns.partialFirst, slots: ns.slots, points: ns.points });
   if (first) { tab = "today"; LS.set("ptl_tab", tab); } else toast("Setup saved.");
 }
 

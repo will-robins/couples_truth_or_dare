@@ -60,6 +60,7 @@ async function firstSetup(page, days, pin = "4321") {
   await page.fill("#d-pin-a", pin); await page.fill("#d-pin-b", pin); await click(page, "#d-pin-save");
   await page.waitForSelector("#s-start");
   if (days === 6) { eq(await page.inputValue("#s-days"), "6", "default days is 6"); eq(await page.inputValue("#s-wc"), "5", "default Winner's Choice night 5"); }
+  await page.check("#s-partial"); // default depends on time of day
   await page.fill("#s-start", "2026-10-11"); await page.fill("#s-days", String(days));
   await click(page, '[data-act="savesetup"]');
   await page.waitForSelector('[data-act="claim"]');
@@ -88,8 +89,8 @@ async function completeAll(page, d) {
     if (await page.locator(`${sec} [data-act="wcdone"]`).count()) {
       await page.locator(`${sec} input[name="wcopt"]`).first().check();
       await click(page, `${sec} [data-act="wcdone"]`);
-    } else if (await page.locator(`${sec} #ans-${key}`).count()) {
-      await page.fill(`#ans-${key}`, `answer d${d} ${key}`); await click(page, `${sec} [data-act="done"]`);
+    } else if (await page.locator(`${sec} #ans-d${d}-${key}`).count()) {
+      await page.fill(`#ans-d${d}-${key}`, `answer d${d} ${key}`); await click(page, `${sec} [data-act="done"]`);
     } else if (await page.locator(`${sec} [data-act="done"]`).count()) await click(page, `${sec} [data-act="done"]`);
   }
 }
@@ -112,7 +113,8 @@ check(await page.isVisible("#decoy"), "lock shows decoy");
 eq(await page.evaluate(() => document.getElementById("game").innerHTML), "", "lock clears #game");
 await typeIntoDecoy(page, "1111");
 check(await page.isHidden("#game"), "wrong PIN does not unlock");
-check((await page.locator("#d-list li", { hasText: "1111" }).count()) === 1, "wrong PIN added as item");
+check((await page.locator("#d-list li", { hasText: "1111" }).count()) === 0, "wrong PIN not added as item");
+eq(await page.inputValue("#d-input"), "", "wrong PIN clears the field");
 await unlock(page);
 check(await page.isVisible("#game"), "4321 unlocks");
 await page.evaluate(() => { Object.defineProperty(document, "hidden", { value: true, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); });
@@ -152,6 +154,12 @@ for (let d = 1; d <= 6; d++) {
   if (night.name.startsWith("Last-night")) check(deck.quick.some((c) => c.text === night.text), "day6 night card from quick pool");
   sl.forEach((s) => note(s.text, `d${d} ${s.name}`));
   await overflow(page, `day ${d} flipped`);
+  if (night.name === "Night dare") {
+    // night ramp: regular nights are days 1-4 here, so day 4 maps to 1.0
+    const np = Math.min(1, (d - 1) / 3), nc = byText.get(night.text);
+    if (nc) check(nc.minProgress <= np + 1e-9, `day${d} night card minProgress ${nc.minProgress} <= ${np.toFixed(2)}`);
+    if (nc && d === 4) check(nc.minProgress >= 0.8, `day4 night card is from the top of the ramp (minProgress ${nc.minProgress})`);
+  }
 
   if (d === 3) {
     await page.screenshot({ path: join(SHOTS, "today-day3.png") });
@@ -171,6 +179,14 @@ for (let d = 1; d <= 6; d++) {
     await click(page, '.slot:has([data-slot="day"]) [data-act="undo"]');
     eq((await scores(page)).coral, s0.coral, "undo restores score");
     check(await page.locator(".forfeit").count() === 0, "forfeit gone after undo");
+    // wild card needs a skipped card's forfeit to be paid
+    await click(page, '.slot:has([data-slot="day"]) [data-act="skip"]');
+    await completeAll(page, d);
+    check(await page.locator('[data-act="wild"]').count() === 0, "wild card locked while a forfeit is unpaid");
+    await page.locator('.forfeit input[type="checkbox"]').check(); await pause(page);
+    check(await page.locator('[data-act="wild"]').count() === 1, "wild card unlocks once the forfeit is paid");
+    await click(page, '.slot:has([data-slot="day"]) [data-act="undo"]');
+    check(await page.locator('[data-act="wild"]').count() === 0, "wild card hidden again after undo");
   }
   await completeAll(page, d);
   check((await page.locator(".slot:not(.wild) .chip.done, .slot:not(.wild) .chip.skipped").count()) === sl.length, `day${d} all slots resolved`);
@@ -230,6 +246,48 @@ for (let d = 1; d <= 6; d++) {
 }
 // after week
 eq((await scores(page)).coral > 0, true, "coral has points");
+check(await page.locator("#toast").count() === 1, "toast showing before lock");
+await click(page, '[data-act="lock"]');
+eq(await page.locator("#toast").count(), 0, "lock removes the toast");
+await unlock(page);
+
+/* Winner's Choice leader is fixed by scores before that day; custom cards skip quickie/WC/hotter slots */
+console.log("Winner's Choice / custom rules");
+await click(page, '[data-tab="write"]');
+await page.locator('input[name="wkind"][value="night"]').check();
+await page.locator('input[name="wtier"][value="naughty"]').check();
+await page.fill("#w-text", "CUSTOM-NIGHT-2 for Riptide");
+await click(page, '[data-act="addcard"]');
+eq(await page.locator('input[name="wkind"]:checked').getAttribute("value"), "night", "write form keeps kind after render");
+eq(await page.locator('input[name="wtier"]:checked').getAttribute("value"), "naughty", "write form keeps tier after render");
+eq(await page.inputValue("#w-text"), "", "write box cleared after adding");
+await click(page, '[data-tab="settings"]'); await click(page, '[data-act="release"]'); await click(page, '[data-act="claim"][data-p="riptide"]');
+await page.waitForSelector(".tabs");
+await setDay(page, 1);
+await click(page, '.slot:has([data-slot="night"]) [data-act="flip"]');
+check(!(await slots(page)).find((s) => s.name === "Night dare").text.startsWith("CUSTOM-NIGHT-2"), "naughty custom card not used in a teasing slot");
+await setDay(page, 5);
+await click(page, '.slot:has([data-slot="night"]) [data-act="flip"]');
+const wcr = (await slots(page)).find((s) => s.name === "Winner's Choice night");
+check(/say yes/.test(wcr.text) && !wcr.text.startsWith("CUSTOM"), "Riptide sees say-yes when Coral leads (custom not used)");
+await setDay(page, 6);
+await click(page, '.slot:has([data-slot="night"]) [data-act="flip"]');
+const qn = (await slots(page)).find((s) => s.name === "Last-night quickie");
+check(deck.quick.some((c) => c.text === qn.text), "custom card not used on the quickie night");
+
+// tie, then points on the WC day itself must not change the leader
+const pt = await newPage();
+await firstSetup(pt, 6);
+await setDay(pt, 5);
+await click(pt, '.slot:has([data-slot="night"]) [data-act="flip"]');
+check(/tied/.test((await slots(pt)).find((s) => s.name === "Winner's Choice night").text), "tie going into WC night");
+await completeAll(pt, 5);
+await click(pt, '[data-tab="settings"]'); await click(pt, '[data-act="release"]'); await click(pt, '[data-act="claim"][data-p="riptide"]');
+await pt.waitForSelector(".tabs");
+await setDay(pt, 5);
+await click(pt, '.slot:has([data-slot="night"]) [data-act="flip"]');
+check(/tied/.test((await slots(pt)).find((s) => s.name === "Winner's Choice night").text), "WC tie unchanged by Coral's points on the same day");
+await pt.context().close();
 
 /* ===================== 3. 3-day and 10-day ===================== */
 const tierRank = { Flirty: 1, Teasing: 2, Naughty: 3 };
