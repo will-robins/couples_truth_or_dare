@@ -9,7 +9,7 @@ The app opens as a plain packing checklist. A PIN unlocks the game. Nothing abou
 1. Open the link.
 2. In the "Add item…" box, type `##` and press **Add**. Choose a 4 to 8 digit PIN. The PIN is stored as a hash on that phone only.
 3. One person finishes **Setup**: start date, number of days, Winner's Choice night, short last night, and whether day 1 starts in the afternoon. Then press **Start the game**.
-4. Each phone picks a code name: **Coral** or **Riptide**. Only one phone can hold each name.
+4. Each phone takes a seat (Player 1 or Player 2), then picks a nickname: Coral, Riptide, Sun-Kissed, Salty Siren, Tan Lines, Lifeguard, Mermaid, Pool Shark, Beach Bum, Sea Breeze, Hot Sand, Cabana Boy, or one you make up. You can't both have the same name. Change it any time on the Setup tab with **Change nickname**.
 
 ## Unlocking and hiding
 
@@ -55,7 +55,7 @@ The day turns over at 4am, so a late night still counts for the day it started. 
 
 ## Writing cards for each other
 
-Open the **Write** tab. Pick a level and a type (truth or dare), then write the card. It goes into your partner's deck and shows up in their draws with "from" your code name. Daytime cards must be safe in public. Save the explicit ones for night.
+Open the **Write** tab. Pick a level and a type (truth or dare), then write the card. It goes into your partner's deck and shows up in their draws with "from" your nickname. Daytime cards must be safe in public. Save the explicit ones for night.
 
 ## Sharing with your partner
 

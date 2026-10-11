@@ -146,6 +146,11 @@ h3.sec { font-size: .8rem; letter-spacing: 1.4px; text-transform: uppercase; col
 .pick button.coral b { color: var(--coral); }
 .pick button.riptide b { color: var(--kelp); }
 .pick button[disabled] { opacity: .4; cursor: default; }
+.nicks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.nick { background: var(--sea); border: 1px solid var(--line); color: var(--foam); border-radius: 12px; padding: 14px 10px; cursor: pointer; font-family: var(--f-display); font-size: 1.15rem; display: grid; gap: 2px; }
+.nick small { font-family: var(--f-body); font-size: .72rem; color: var(--foam-dim); }
+.nick.on { border-color: var(--coral); color: var(--coral); }
+.nick[disabled] { opacity: .4; cursor: default; }
 .empty { color: var(--foam-dim); font-size: .92rem; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; line-height: 1.45; }
 @media (max-width: 380px) { .grid2, .scores { grid-template-columns: 1fr; } }
 </style>
@@ -199,7 +204,12 @@ function today() {
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 const fmtDate = (d) => d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
-const PLAYERS = { coral: "Coral", riptide: "Riptide" };
+// Seats are fixed ids ("coral", "riptide"); each player picks the nickname shown everywhere (state.names).
+const SEATS = { coral: "Player 1", riptide: "Player 2" };
+const NICKNAMES = ["Coral", "Riptide", "Sun-Kissed", "Salty Siren", "Tan Lines", "Lifeguard", "Mermaid", "Pool Shark", "Beach Bum", "Sea Breeze", "Hot Sand", "Cabana Boy"];
+const cleanName = (n) => String(n || "").replace(/[^A-Za-z0-9 '!.\-]/g, "").replace(/\s+/g, " ").trim().slice(0, 18);
+const chosenName = (p) => cleanName(cache.state && cache.state.names && cache.state.names[p]);
+const nameOf = (p) => chosenName(p) || (p === "riptide" ? "Riptide" : "Coral");
 const other = (p) => (p === "coral" ? "riptide" : "coral");
 const TIER_LABEL = { flirty: "Flirty", teasing: "Teasing", naughty: "Naughty" };
 
@@ -356,7 +366,7 @@ const claimKey = () => (uid || "anon") + ":" + devId();
 function me() {
   const st = S(); if (!st) return null;
   if (mode === "db") { const k = claimKey(), c = st.claims || {}; for (const p of ["coral", "riptide"]) if (c[p] === k) return p; return null; }
-  const lp = LS.get("ptl_player", null); return lp && PLAYERS[lp] ? lp : null;
+  const lp = LS.get("ptl_player", null); return lp && SEATS[lp] ? lp : null;
 }
 function dayNum(st) { return Math.round((today() - parseYmd(st.startDate)) / 864e5) + 1; }
 function progress(st, d) { return st.days > 1 ? Math.min(1, Math.max(0, (d - 1) / (st.days - 1))) : 1; }
@@ -500,8 +510,9 @@ function render() {
   if (mode === "connecting" || (mode === "db" && !stateLoaded && !st)) body = `<div class="hero"><h2>Tide &amp; Tell</h2><p class="note">Connecting…</p></div>`;
   else if (!st) body = viewSetup(true);
   else if (!me()) body = viewPick(st);
+  else if (!chosenName(me())) body = viewNick(st, true);
   else body = viewTab(st);
-  g.innerHTML = header(st) + body + (st && me() ? tabsBar() : "");
+  g.innerHTML = header(st) + body + (st && me() && chosenName(me()) ? tabsBar() : "");
   restoreInputs(g, keep);
 }
 const chkKey = (el) => (el.id ? "#" + el.id : el.name ? el.name + "=" + el.value : null);
@@ -520,7 +531,7 @@ function header(st) {
   const p = st && me();
   const roNote = readOnly ? `<div class="sync warn">View only: ask your partner to share as Contributor.</div>` : "";
   const syncNote = roNote + (mode === "db" ? "" : mode === "connecting" ? "" : `<div class="sync warn">Not syncing: this phone only. Scores won't reach your partner.</div>`);
-  return `<div class="g-head"><h1>Tide &amp; Tell</h1>${p ? `<div class="who">playing as<b>${PLAYERS[p]}</b></div>` : ""}<button class="lockbtn" data-act="lock" type="button" aria-label="Lock">Lock</button></div>${syncNote}`;
+  return `<div class="g-head"><h1>Tide &amp; Tell</h1>${p ? `<div class="who">playing as<b>${nameOf(p)}</b></div>` : ""}<button class="lockbtn" data-act="lock" type="button" aria-label="Lock">Lock</button></div>${syncNote}`;
 }
 function tabsBar() {
   const t = [["today", "Today"], ["scores", "Scores"], ["wallet", "Wallet"], ["write", "Write"], ["settings", "Setup"]];
@@ -531,13 +542,22 @@ function viewTab(st) {
   if (tab === "wallet") return viewWallet(st);
   if (tab === "write") return viewWrite(st);
   if (tab === "settings") return viewSetup(false);
+  if (tab === "nick") return viewNick(st, false);
   return viewToday(st);
 }
 function viewPick(st) {
   const c = st.claims || {};
   const taken = (p) => mode === "db" && c[p] && c[p] !== claimKey();
-  return `<div class="hero"><h2>Who's holding this phone?</h2><p class="note">Pick your code name. Your partner picks the other one on their phone.</p></div>
-  <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ><b>${PLAYERS[p]}</b><span>${taken(p) ? (pendingConfirm === "take:" + p ? "Tap again to take over" : "Taken — tap twice to take over") : "Play as " + PLAYERS[p]}</span></button>`).join("")}</div>`;
+  const label = (p) => chosenName(p) || SEATS[p];
+  return `<div class="hero"><h2>Who's holding this phone?</h2><p class="note">Pick a seat. Your partner takes the other one on their phone. You'll choose a nickname next.</p></div>
+  <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ><b>${label(p)}</b><span>${taken(p) ? (pendingConfirm === "take:" + p ? "Tap again to take over" : "Taken — tap twice to take over") : "Play as " + label(p)}</span></button>`).join("")}</div>`;
+}
+function viewNick(st, first) {
+  const pl = me(), mine = chosenName(pl), theirs = chosenName(other(pl)).toLowerCase();
+  return `<div class="hero"><h2>${first ? "Pick your nickname" : "Change your nickname"}</h2><p class="note">Your partner sees this name all week.</p></div>
+  <div class="nicks">${NICKNAMES.map((n) => { const t = n.toLowerCase() === theirs; return `<button type="button" class="nick ${n === mine ? "on" : ""}" data-act="nick" data-n="${n}" ${t ? "disabled" : ""}>${n}${t ? "<small>your partner's</small>" : ""}</button>`; }).join("")}</div>
+  <div class="form" style="margin-top:16px"><label>Or make up your own<input class="g" id="nick-own" maxlength="18" placeholder="Letters and numbers, up to 18"></label>
+  <div class="actions"><button type="button" class="btn go" data-act="nickown">Use this name</button>${first ? "" : `<button type="button" class="btn ghost" data-tab="settings">Cancel</button>`}</div></div>`;
 }
 
 function tideBar(st, d) {
@@ -553,11 +573,11 @@ function viewToday(st) {
   const partner = other(pl), pplay = playOf(st, partner, d), pslots = slots.length;
   const pdone = pplay ? Object.values(pplay.slots || {}).filter((x) => x.status === "done" || x.status === "skipped").length : 0;
   let intro = "";
-  if (isWC(st, d)) { const L = leaderFor(st, d); intro = `<p class="note">Winner's Choice night. ${L === "tie" ? "You're tied going in, so you each choose one thing." : `${PLAYERS[L]} is in the lead and picks tonight.`}</p>`; }
+  if (isWC(st, d)) { const L = leaderFor(st, d); intro = `<p class="note">Winner's Choice night. ${L === "tie" ? "You're tied going in, so you each choose one thing." : `${nameOf(L)} is in the lead and picks tonight.`}</p>`; }
   else if (isLightFinal(st, d)) intro = `<p class="note">Last night: packing, early alarm. Tonight's dare is short and quiet. Scores lock at 4am.</p>`;
   const allResolved = slots.length > 0 && slots.every((s) => { const x = play.slots[s.key]; return x && (x.status === "done" || (x.status === "skipped" && x.forfeitDone)); });
   return `<div class="dayline"><h2>Day ${d} of ${st.days}</h2><span class="date">${esc(fmtDate(addDays(start, d - 1)))}</span></div>${tideBar(st, d)}${intro}
-  <p class="partnerline"><b>${PLAYERS[partner]}</b> has finished ${pdone} of ${pslots} today.${(() => { const n = toConfirm(st, pl); return n ? ` <button type="button" class="reveal" data-tab="scores">${n} dare${n > 1 ? "s" : ""} to confirm</button>` : ""; })()}</p>
+  <p class="partnerline"><b>${nameOf(partner)}</b> has finished ${pdone} of ${pslots} today.${(() => { const n = toConfirm(st, pl); return n ? ` <button type="button" class="reveal" data-tab="scores">${n} dare${n > 1 ? "s" : ""} to confirm</button>` : ""; })()}</p>
   <div class="stack">${slots.map((s) => slotCard(st, play, s, d)).join("")}${allResolved ? wildCard(st, play, d) : ""}</div>`;
 }
 function slotCard(st, play, s, d) {
@@ -565,11 +585,11 @@ function slotCard(st, play, s, d) {
   const top = (chip) => `<div class="slot-top"><span class="slot-name">${esc(s.name)}</span>${chip}</div>`;
   if (!x || !x.cardId) return `<section class="slot">${top(`<span class="chip ${s.tier}">${TIER_LABEL[s.tier]}</span>`)}<button type="button" class="facedown" data-act="flip" data-slot="${s.key}"><span>Tap to turn over</span></button></section>`;
   const c = cardById(x.cardId) || { tier: s.tier, text: "(missing card)" };
-  const bonus = confirmBonus(st, play.player, d, s.key, x), confirmed = confirmedBy(st, play.player, d, s.key, x), partner = PLAYERS[other(play.player)];
+  const bonus = confirmBonus(st, play.player, d, s.key, x), confirmed = confirmedBy(st, play.player, d, s.key, x), partner = nameOf(other(play.player));
   const statusChip = x.status === "done" ? `<span class="chip done">Done +${slotPoints(st, x) + bonus}</span>` : x.status === "skipped" ? `<span class="chip skipped">Skipped ${slotPoints(st, x)}</span>` : `<span class="chip ${c.tier}">${TIER_LABEL[c.tier] || ""}</span>`;
   let inner = `<p class="cardtext">${esc(c.text)}</p>`;
   if (c.codeWord) inner += `<div class="code">Code word: ${esc(c.codeWord)}</div>`;
-  if (c.custom) inner += `<div class="from">Written for you by ${PLAYERS[c.author] || "your partner"}</div>`;
+  if (c.custom) inner += `<div class="from">Written for you by ${(c.author ? nameOf(c.author) : "your partner")}</div>`;
   const id = `ans-d${d}-${s.key}`;
   if (x.status === "open") {
     if (c.wc === "choice") {
@@ -606,14 +626,14 @@ function wildCard(st, play, d) {
 function finalView(st) {
   const a = scoreOf(st, "coral").net, b = scoreOf(st, "riptide").net;
   const w = a === b ? null : a > b ? "coral" : "riptide";
-  return `<div class="hero"><h2>${w ? `${PLAYERS[w]} wins` : "Dead heat"}</h2><p class="note">Final score ${PLAYERS.coral} ${a}, ${PLAYERS.riptide} ${b}. Unspent coupons in the Wallet still count at home.</p></div>${tideBar(st, st.days + 1)}`;
+  return `<div class="hero"><h2>${w ? `${nameOf(w)} wins` : "Dead heat"}</h2><p class="note">Final score ${nameOf("coral")} ${a}, ${nameOf("riptide")} ${b}. Unspent coupons in the Wallet still count at home.</p></div>${tideBar(st, st.days + 1)}`;
 }
 
 function viewScores(st) {
   const pl = me(), d = Math.min(dayNum(st), st.days);
   const sc = { coral: scoreOf(st, "coral").net, riptide: scoreOf(st, "riptide").net };
   const lead = sc.coral === sc.riptide ? null : sc.coral > sc.riptide ? "coral" : "riptide";
-  const box = (p) => `<div class="score ${lead === p ? "lead" : ""}"><div class="tag">${lead === p ? "Leading" : "&nbsp;"}</div><div class="n">${sc[p]}</div><div class="p">${PLAYERS[p]}${p === pl ? " (you)" : ""}</div></div>`;
+  const box = (p) => `<div class="score ${lead === p ? "lead" : ""}"><div class="tag">${lead === p ? "Leading" : "&nbsp;"}</div><div class="n">${sc[p]}</div><div class="p">${nameOf(p)}${p === pl ? " (you)" : ""}</div></div>`;
   const rows = [];
   for (let day = Math.max(1, d); day >= 1; day--) {
     ["coral", "riptide"].forEach((p) => {
@@ -626,18 +646,18 @@ function viewScores(st) {
         const ans = sl.answer || (c.wc === "choice" && sl.choice != null ? DECK.winnersChoice[sl.choice] + (sl.answer ? "" : "") : "");
         if (ans || (c.wc === "choice" && sl.choice != null)) {
           const full = (c.wc === "choice" && sl.choice != null ? DECK.winnersChoice[sl.choice] + (sl.answer ? " · " + sl.answer : "") : sl.answer);
-          extra = p === pl || revealed.has(key) ? `<div class="answer">${p === pl ? "Your answer" : PLAYERS[p] + "'s answer"}: ${esc(full)}</div>` : `<button type="button" class="reveal" data-act="reveal" data-k="${key}">Tap to read ${PLAYERS[p]}'s answer</button>`;
+          extra = p === pl || revealed.has(key) ? `<div class="answer">${p === pl ? "Your answer" : nameOf(p) + "'s answer"}: ${esc(full)}</div>` : `<button type="button" class="reveal" data-act="reveal" data-k="${key}">Tap to read ${nameOf(p)}'s answer</button>`;
         }
         const bonus = confirmBonus(st, p, day, s.key, sl);
         if (DARE_KEYS.has(s.key) && sl.status === "done") {
-          if (confirmedBy(st, p, day, s.key, sl)) extra += `<div class="from">Confirmed by ${PLAYERS[other(p)]}, +${bonus}</div>`;
+          if (confirmedBy(st, p, day, s.key, sl)) extra += `<div class="from">Confirmed by ${nameOf(other(p))}, +${bonus}</div>`;
           else if (dayNum(st) > st.days) extra += `<div class="from">Not confirmed</div>`;
-          else if (p === pl) extra += `<div class="from">Waiting for ${PLAYERS[other(p)]} to confirm</div>`;
-          else extra += `<div class="actions"><button type="button" class="btn small go" data-act="confirm" data-p="${p}" data-day="${day}" data-key="${s.key}">Confirm it happened (+${confirmPts(st)} for ${PLAYERS[p]})</button></div>`;
+          else if (p === pl) extra += `<div class="from">Waiting for ${nameOf(other(p))} to confirm</div>`;
+          else extra += `<div class="actions"><button type="button" class="btn small go" data-act="confirm" data-p="${p}" data-day="${day}" data-key="${s.key}">Confirm it happened (+${confirmPts(st)} for ${nameOf(p)})</button></div>`;
         }
-        rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · ${esc(s.name)}</span><span>${sl.status === "done" ? "+" + (slotPoints(st, sl) + bonus) : slotPoints(st, sl)}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`);
+        rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${nameOf(p)} · ${esc(s.name)}</span><span>${sl.status === "done" ? "+" + (slotPoints(st, sl) + bonus) : slotPoints(st, sl)}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`);
       });
-      if (x.wild && x.wild.played && ALL[x.wild.cardId]) rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${PLAYERS[p]} · Wild card</span><span>${ALL[x.wild.cardId].self >= 0 ? "+" : ""}${ALL[x.wild.cardId].self}</span></div><div class="t">${esc(ALL[x.wild.cardId].text)}</div></div>`);
+      if (x.wild && x.wild.played && ALL[x.wild.cardId]) rows.push(`<div class="hrow"><div class="meta"><span>Day ${day} · ${nameOf(p)} · Wild card</span><span>${ALL[x.wild.cardId].self >= 0 ? "+" : ""}${ALL[x.wild.cardId].self}</span></div><div class="t">${esc(ALL[x.wild.cardId].text)}</div></div>`);
     });
   }
   return `<div class="scores">${box("coral")}${box("riptide")}</div>
@@ -657,14 +677,14 @@ function viewWallet(st) {
   return `<h3 class="sec">Your coupons</h3><p class="note">One coupon for every 10 points earned. Skips and steals don't take coupons away. ${toNext} more points to the next one.</p>
   <div class="progress"><i style="width:${(g % 10) * 10}%"></i></div>
   <div class="stack" style="margin-top:12px">${list(mine, w, true) || `<div class="empty">No coupons yet. Finish cards to earn your first at 10 points.</div>`}</div>
-  <h3 class="sec">${PLAYERS[partner]}'s coupons</h3><p class="note">What your partner can cash in on you.</p>
+  <h3 class="sec">${nameOf(partner)}'s coupons</h3><p class="note">What your partner can cash in on you.</p>
   <div class="stack">${list(theirs, pw, false) || `<div class="empty">None yet.</div>`}</div>`;
 }
 
 function viewWrite(st) {
   const pl = me();
   const mine = Object.entries(cache.custom).filter(([, c]) => c && c.author === pl).sort((a, b) => (b[1].created || 0) - (a[1].created || 0));
-  return `<h3 class="sec">Write a card for ${PLAYERS[other(pl)]}</h3>
+  return `<h3 class="sec">Write a card for ${nameOf(other(pl))}</h3>
   <p class="note">It goes to the front of their deck. They'll get it the next time that kind of card turns over, worth +${(st.points || DEFAULT_POINTS).custom} bonus point.</p>
   <div class="form">
     <div class="seg" role="radiogroup" aria-label="Kind">
@@ -707,7 +727,7 @@ function viewSetup(first) {
     <div class="actions"><button type="button" class="btn go" data-act="savesetup">${first ? "Start the game" : "Save setup"}</button></div>
     ${first ? "" : `
     <h3 class="sec">This phone</h3>
-    <div class="actions"><button type="button" class="btn" data-act="changepin">Change PIN</button><button type="button" class="btn" data-act="release">Switch code name</button></div>
+    <div class="actions"><button type="button" class="btn" data-act="changepin">Change PIN</button><button type="button" class="btn" data-act="gonick">Change nickname</button><button type="button" class="btn" data-act="release">Switch player</button></div>
     <h3 class="sec">Start over</h3>
     <p class="note">Clears every card drawn, all scores and coupons. Cards you've written for each other stay.</p>
     <div class="actions">${conf ? `<button type="button" class="btn danger" data-act="resetyes">Yes, clear everything</button><button type="button" class="btn ghost" data-act="resetno">Cancel</button>` : `<button type="button" class="btn danger" data-act="reset">Reset game</button>`}</div>`}
@@ -755,6 +775,16 @@ $("#game").addEventListener("click", async (e) => {
   if (act === "resetyes") { pendingConfirm = null; await updateState({ epoch: (S().epoch || 1) + 1 }); tab = "today"; toast("Game reset."); return; }
   if (act === "reveal") { revealed.add(el.dataset.k); return render(); }
   if (!st || !me()) return;
+  if (act === "gonick") { tab = "nick"; render(); window.scrollTo(0, 0); return; }
+  if (act === "nick" || act === "nickown") {
+    const n = cleanName(act === "nick" ? el.dataset.n : ($("#nick-own") || {}).value);
+    if (!n) { toast("Type a name using letters or numbers."); return; }
+    if (n.toLowerCase() === chosenName(other(me())).toLowerCase()) { toast("Your partner already has that name."); return; }
+    const was = tab === "nick";
+    await updateState({ names: { [me()]: n } }, { names: { ...((S() && S().names) || {}), [me()]: n } });
+    if (was) { tab = "settings"; LS.set("ptl_tab", tab); }
+    toast(`You're ${n} now.`); return;
+  }
   if (act === "confirm") {
     const p = el.dataset.p, day = +el.dataset.day, key = el.dataset.key;
     if (p === me() || !DARE_KEYS.has(key)) return;
@@ -762,7 +792,7 @@ $("#game").addEventListener("click", async (e) => {
     const sl = ((playOf(st, p, day) || {}).slots || {})[key]; if (!sl || sl.status !== "done") return;
     const id = `e${st.epoch}_${me()}`, doc = JSON.parse(JSON.stringify(cache.confirms[id] || { player: me(), epoch: st.epoch, map: {} }));
     doc.map = doc.map || {}; doc.map[`${p}-${day}-${key}`] = sl.cardId;
-    await putDoc("confirms", id, doc); toast(`Confirmed. +${confirmPts(st)} for ${PLAYERS[p]}`); return;
+    await putDoc("confirms", id, doc); toast(`Confirmed. +${confirmPts(st)} for ${nameOf(p)}`); return;
   }
 
   if (act === "flip") {
@@ -801,7 +831,7 @@ $("#game").addEventListener("click", async (e) => {
     toast("Swapped. One swap per night."); return;
   }
   if (act === "wild") { const play = curPlay(st); if (play.wild) return; play.wild = { cardId: pickFrom(st, "wild", me() + play.day), played: false }; await savePlay(st, play); return; }
-  if (act === "playwild") { const play = curPlay(st); if (!play.wild || play.wild.played) return; play.wild.played = true; await savePlay(st, play); const w = ALL[play.wild.cardId]; toast(`${w.self >= 0 ? "+" : ""}${w.self} for you${w.partner ? `, ${w.partner >= 0 ? "+" : ""}${w.partner} for ${PLAYERS[other(me())]}` : ""}`); return; }
+  if (act === "playwild") { const play = curPlay(st); if (!play.wild || play.wild.played) return; play.wild.played = true; await savePlay(st, play); const w = ALL[play.wild.cardId]; toast(`${w.self >= 0 ? "+" : ""}${w.self} for you${w.partner ? `, ${w.partner >= 0 ? "+" : ""}${w.partner} for ${nameOf(other(me()))}` : ""}`); return; }
   if (act === "redeem" || act === "unredeem") {
     const id = `e${st.epoch}_${me()}`, w = JSON.parse(JSON.stringify(cache.wallet[id] || { player: me(), epoch: st.epoch, redeemed: {} }));
     w.redeemed = w.redeemed || {}; if (act === "redeem") w.redeemed[el.dataset.i] = true; else delete w.redeemed[el.dataset.i];
