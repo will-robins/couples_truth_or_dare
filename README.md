@@ -7,13 +7,13 @@ The app opens as a plain packing checklist. A PIN unlocks the game. Nothing abou
 ## First-time setup on each phone
 
 1. Open the link.
-2. In the "Add item…" box, type `##` and press **Add**. Choose a 4 to 8 digit PIN. The PIN is stored as a hash on that phone only.
+2. Tap the 🧴 bottle at the top right. Choose a 4 to 8 digit PIN on the number pad. The PIN is stored as a hash on that phone only. (Typing `##` into "Add item…" also opens PIN setup.)
 3. One person finishes **Setup**: start date, number of days, Winner's Choice night, short last night, and whether day 1 starts in the afternoon. Then press **Start the game**.
 4. Each phone takes a seat (Player 1 or Player 2), then picks a nickname: Coral, Riptide, Sun-Kissed, Salty Siren, Tan Lines, Lifeguard, Mermaid, Pool Shark, Beach Bum, Sea Breeze, Hot Stuff, Cabana Boy, or one you make up. You can't both have the same name. Change it any time on the Setup tab with **Change nickname**.
 
 ## Unlocking and hiding
 
-- To unlock, type the PIN into "Add item…" and press Enter.
+- To unlock, tap the 🧴 bottle and type the PIN on the number pad. It opens as soon as the PIN is right; a wrong PIN just clears. Typing the PIN into "Add item…" and pressing Enter also works.
 - A wrong entry is added as a normal list item. Nothing else happens.
 - The game locks again when you tap **Lock**, when you switch apps, or after 2 minutes idle.
 

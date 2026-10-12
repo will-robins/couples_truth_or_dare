@@ -20,6 +20,7 @@
 :root[data-theme="dark"] { --d-bg: #141b1c; --d-fg: #e3ebec; --d-muted: #93a4a6; --d-line: #2b3739; --d-card: #1c2526; --d-accent: #5fb4ba; color-scheme: dark }
 
 html, body { min-height: 100%; }
+[hidden] { display: none !important; }
 body { background: var(--d-bg); color: var(--d-fg); font-family: var(--f-plain); }
 body.in-game { background: var(--ink); color: var(--foam); }
 button, input, select, textarea { font: inherit; }
@@ -198,9 +199,13 @@ textarea.g { min-height: 64px; }
   <p class="d-sub">Don't forget the chargers this time.</p>
   <div class="d-pin" id="d-pin" hidden>
     <div class="msg" id="d-pin-msg">Choose a PIN (4–8 digits).</div>
-    <input id="d-pin-a" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
-    <input id="d-pin-b" type="password" inputmode="numeric" autocomplete="off" placeholder="Repeat PIN">
+    <input id="d-pin-a" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="PIN">
+    <input id="d-pin-b" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="Repeat PIN">
     <div class="row"><button type="button" id="d-pin-save">Save</button><button type="button" id="d-pin-cancel">Cancel</button></div>
+  </div>
+  <div class="d-pin" id="d-unlock" hidden>
+    <input id="d-unlock-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="••••" aria-label="Code">
+    <div class="row"><button type="button" id="d-unlock-cancel">Cancel</button></div>
   </div>
   <form class="d-form" id="d-form" autocomplete="off">
     <input id="d-input" placeholder="Add item…" aria-label="Add item" enterkeyhint="done" autocomplete="off">
@@ -268,7 +273,7 @@ $("#d-form").addEventListener("submit", async (e) => {
   if (pinHash && /^\d{4,8}$/.test(v)) { const ok = (await sha(v)) === pinHash; inp.value = ""; if (ok) unlock(); return; } // wrong PIN: clear, don't list it
   items.push({ t: v, d: false }); saveItems(); inp.value = ""; renderDecoy();
 });
-function showPinSetup(msg) { $("#d-pin").hidden = false; $("#d-pin-msg").textContent = msg || "Choose a PIN (4–8 digits)."; $("#d-pin-a").value = ""; $("#d-pin-b").value = ""; $("#d-pin-a").focus(); }
+function showPinSetup(msg) { $("#d-unlock").hidden = true; $("#d-pin").hidden = false; $("#d-pin-msg").textContent = msg || "Choose a PIN (4–8 digits)."; $("#d-pin-a").value = ""; $("#d-pin-b").value = ""; $("#d-pin-a").focus(); }
 $("#d-pin-cancel").addEventListener("click", () => { $("#d-pin").hidden = true; });
 $("#d-pin-save").addEventListener("click", async () => {
   const a = $("#d-pin-a").value, b = $("#d-pin-b").value;
@@ -276,7 +281,23 @@ $("#d-pin-save").addEventListener("click", async () => {
   if (a !== b) { $("#d-pin-msg").textContent = "The two PINs don't match. Try again."; return; }
   LS.set("ptl_pin", await sha(a)); $("#d-pin").hidden = true; unlock();
 });
-$("#d-icon").addEventListener("click", () => {});
+// The bottle opens the same number pad for first-time setup and for unlocking.
+// (Typing the PIN or "##" into "Add item…" still works as a fallback.)
+function showUnlock() { $("#d-pin").hidden = true; const u = $("#d-unlock"); u.hidden = false; const i = $("#d-unlock-pin"); i.value = ""; i.focus(); }
+function hideUnlock() { $("#d-unlock").hidden = true; $("#d-unlock-pin").value = ""; }
+$("#d-icon").addEventListener("click", () => {
+  if (!$("#d-unlock").hidden || !$("#d-pin").hidden) { hideUnlock(); $("#d-pin").hidden = true; return; }
+  if (LS.get("ptl_pin", null)) showUnlock(); else showPinSetup();
+});
+$("#d-unlock-cancel").addEventListener("click", hideUnlock);
+async function tryUnlock(final) {
+  const i = $("#d-unlock-pin"), v = i.value.replace(/\D/g, ""); if (v !== i.value) i.value = v;
+  const pinHash = LS.get("ptl_pin", null);
+  if (pinHash && v.length >= 4 && (await sha(v)) === pinHash) { hideUnlock(); unlock(); return; }
+  if (final) i.value = ""; // wrong code: clear quietly
+}
+$("#d-unlock-pin").addEventListener("input", () => tryUnlock(false));
+$("#d-unlock-pin").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tryUnlock(true); } });
 
 /* ================= lock / unlock ================= */
 let unlocked = false, idleTimer = null;
@@ -291,7 +312,7 @@ function lock() {
   clearTimeout(toastTimer); const tt = $("#toast"); if (tt) tt.remove();
   revealed = new Set(); pendingConfirm = null; dirty = false;
   const g = $("#game"); g.innerHTML = ""; g.hidden = true;
-  document.body.classList.remove("in-game"); $("#decoy").hidden = false; $("#d-pin").hidden = true;
+  document.body.classList.remove("in-game"); $("#decoy").hidden = false; $("#d-pin").hidden = true; hideUnlock();
   renderDecoy(); window.scrollTo(0, 0);
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden && unlocked) lock(); });

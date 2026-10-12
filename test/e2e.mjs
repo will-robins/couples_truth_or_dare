@@ -129,6 +129,19 @@ await page.evaluate(() => { Object.defineProperty(document, "hidden", { value: t
 await pause(page);
 check(await page.isVisible("#decoy") && (await page.evaluate(() => document.getElementById("game").innerHTML)) === "", "visibilitychange hidden locks");
 await page.evaluate(() => { delete document.hidden; });
+// number-pad unlock via the bottle icon
+await click(page, "#d-icon");
+check(await page.isVisible("#d-unlock-pin"), "bottle opens the code field");
+eq(await page.getAttribute("#d-unlock-pin", "inputmode"), "numeric", "code field uses the number pad");
+eq(await page.getAttribute("#d-pin-a", "inputmode"), "numeric", "setup field uses the number pad");
+await page.fill("#d-unlock-pin", "1111"); await page.press("#d-unlock-pin", "Enter"); await pause(page);
+check(await page.isHidden("#game"), "wrong code does not unlock");
+eq(await page.inputValue("#d-unlock-pin"), "", "wrong code clears");
+await page.locator("#d-unlock-pin").pressSequentially("4321"); await pause(page);
+check(await page.isVisible("#game"), "right code unlocks without Enter");
+await click(page, '[data-act="lock"]');
+check(await page.isHidden("#d-unlock"), "code field hidden after lock");
+await unlock(page);
 
 /* ===================== 2. six-day week as Coral ===================== */
 console.log("Six-day week");
