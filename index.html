@@ -265,12 +265,20 @@ function renderDecoy() {
 }
 $("#d-list").addEventListener("change", (e) => { const i = e.target.dataset.i; if (i != null) { items[i].d = e.target.checked; saveItems(); renderDecoy(); } });
 $("#d-list").addEventListener("click", (e) => { const i = e.target.dataset.del; if (i != null) { items.splice(+i, 1); saveItems(); renderDecoy(); } });
+// The PIN hash lives in localStorage and, once signed in, in this account's private game data
+// (data/users/<id>/prefs), because iPhone storage can be wiped and the Claude app and Safari don't share it.
+let remotePin = null, pinLoaded = false;
+const pinHash = () => LS.get("ptl_pin", null) || remotePin;
+async function savePin(h) {
+  LS.set("ptl_pin", h); remotePin = h;
+  if (db && uid) { try { await db.doc("data/users/" + uid + "/prefs").set({ pinHash: h, at: Date.now() }); } catch {} }
+}
 $("#d-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const inp = $("#d-input"); const v = inp.value.trim(); if (!v) return;
-  const pinHash = LS.get("ptl_pin", null);
-  if (v === "##" && !pinHash) { inp.value = ""; showPinSetup(); return; }
-  if (pinHash && /^\d{4,8}$/.test(v)) { const ok = (await sha(v)) === pinHash; inp.value = ""; if (ok) unlock(); return; } // wrong PIN: clear, don't list it
+  const ph = pinHash();
+  if (v === "##" && !ph) { inp.value = ""; showPinSetup(); return; }
+  if (ph && /^\d{4,8}$/.test(v)) { const ok = (await sha(v)) === ph; inp.value = ""; if (ok) unlock(); return; } // wrong PIN: clear, don't list it
   items.push({ t: v, d: false }); saveItems(); inp.value = ""; renderDecoy();
 });
 function showPinSetup(msg) { $("#d-unlock").hidden = true; $("#d-pin").hidden = false; $("#d-pin-msg").textContent = msg || "Choose a PIN (4–8 digits)."; $("#d-pin-a").value = ""; $("#d-pin-b").value = ""; $("#d-pin-a").focus(); }
@@ -279,7 +287,7 @@ $("#d-pin-save").addEventListener("click", async () => {
   const a = $("#d-pin-a").value, b = $("#d-pin-b").value;
   if (!/^\d{4,8}$/.test(a)) { $("#d-pin-msg").textContent = "Use 4 to 8 digits."; return; }
   if (a !== b) { $("#d-pin-msg").textContent = "The two PINs don't match. Try again."; return; }
-  LS.set("ptl_pin", await sha(a)); $("#d-pin").hidden = true; unlock();
+  await savePin(await sha(a)); $("#d-pin").hidden = true; unlock();
 });
 // The bottle opens the same number pad for first-time setup and for unlocking.
 // (Typing the PIN or "##" into "Add item…" still works as a fallback.)
@@ -287,13 +295,14 @@ function showUnlock() { $("#d-pin").hidden = true; const u = $("#d-unlock"); u.h
 function hideUnlock() { $("#d-unlock").hidden = true; $("#d-unlock-pin").value = ""; }
 $("#d-icon").addEventListener("click", () => {
   if (!$("#d-unlock").hidden || !$("#d-pin").hidden) { hideUnlock(); $("#d-pin").hidden = true; return; }
-  if (LS.get("ptl_pin", null)) showUnlock(); else showPinSetup();
+  // still loading the saved PIN: show the keypad; tryUnlock re-checks once it arrives
+  if (pinHash() || !pinLoaded) showUnlock(); else showPinSetup();
 });
 $("#d-unlock-cancel").addEventListener("click", hideUnlock);
 async function tryUnlock(final) {
   const i = $("#d-unlock-pin"), v = i.value.replace(/\D/g, ""); if (v !== i.value) i.value = v;
-  const pinHash = LS.get("ptl_pin", null);
-  if (pinHash && v.length >= 4 && (await sha(v)) === pinHash) { hideUnlock(); unlock(); return; }
+  const ph = pinHash();
+  if (ph && v.length >= 4 && (await sha(v)) === ph) { hideUnlock(); unlock(); return; }
   if (final) i.value = ""; // wrong code: clear quietly
 }
 $("#d-unlock-pin").addEventListener("input", () => tryUnlock(false));
@@ -392,9 +401,22 @@ function onDbErr() {
   unsubs.forEach((u) => { try { u(); } catch {} }); unsubs = [];
   loadLocal(); render(); // header shows the "Not syncing" note
 }
+async function loadPin() {
+  if (!uid) return;
+  try {
+    const snap = await db.doc("data/users/" + uid + "/prefs").get();
+    const h = snap.exists && snap.data() && snap.data().pinHash;
+    if (h) { remotePin = h; if (!LS.get("ptl_pin", null)) LS.set("ptl_pin", h); }
+    else if (LS.get("ptl_pin", null)) savePin(LS.get("ptl_pin", null)); // back up a PIN set before this existed
+  } catch {}
+}
+function afterPinLoad() {
+  // the keypad was opened before the saved PIN arrived
+  if (!$("#d-unlock").hidden) { if (pinHash()) tryUnlock(false); else showPinSetup(); }
+}
 async function initStore() {
   const c = window.claude;
-  if (!c || typeof c.use !== "function") { mode = "local"; loadLocal(); render(); return; }
+  if (!c || typeof c.use !== "function") { mode = "local"; loadLocal(); pinLoaded = true; render(); return; }
   let timer;
   try {
     const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), 12000); });
@@ -403,9 +425,10 @@ async function initStore() {
       try { uid = await u.id(); } catch { uid = null; }
       try { if (typeof u.can === "function" && (await u.can("data.write")) === false) readOnly = true; } catch {}
     }
-    if (d) { db = d; mode = "db"; subscribeAll(); } else { mode = "local"; loadLocal(); }
+    if (d) { db = d; mode = "db"; subscribeAll(); await loadPin(); } else { mode = "local"; loadLocal(); }
   } catch { mode = "local"; loadLocal(); }
   clearTimeout(timer);
+  pinLoaded = true; afterPinLoad();
   render();
 }
 
@@ -437,9 +460,18 @@ const S = () => cache.state;
 let devCache = null;
 function devId() { if (!devCache) { devCache = LS.get("ptl_dev", null); if (!devCache) { devCache = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); LS.set("ptl_dev", devCache); } } return devCache; }
 const claimKey = () => (uid || "anon") + ":" + devId();
+// A seat is this phone's if it holds this phone's exact key, or (when the phone's stored id was wiped)
+// if this signed-in account holds exactly one seat. One account playing both seats still needs the exact key.
+function ownsSeat(c, p) {
+  const k = claimKey(); if (c[p] === k) return true;
+  if (!uid) return false;
+  const pre = uid + ":", mine = ["coral", "riptide"].filter((q) => typeof c[q] === "string" && c[q].startsWith(pre));
+  if (["coral", "riptide"].some((q) => c[q] === k)) return false;
+  return mine.length === 1 && mine[0] === p;
+}
 function me() {
   const st = S(); if (!st) return null;
-  if (mode === "db") { const k = claimKey(), c = st.claims || {}; for (const p of ["coral", "riptide"]) if (c[p] === k) return p; return null; }
+  if (mode === "db") { const c = st.claims || {}; for (const p of ["coral", "riptide"]) if (ownsSeat(c, p)) return p; return null; }
   const lp = LS.get("ptl_player", null); return lp && SEATS[lp] ? lp : null;
 }
 function dayNum(st) { return Math.round((today() - parseYmd(st.startDate)) / 864e5) + 1; }
@@ -623,7 +655,7 @@ function viewTab(st) {
 }
 function viewPick(st) {
   const c = st.claims || {};
-  const taken = (p) => mode === "db" && c[p] && c[p] !== claimKey();
+  const taken = (p) => mode === "db" && c[p] && !ownsSeat(c, p);
   const label = (p) => chosenName(p) || SEATS[p];
   return `<div class="hero"><h2>Who's holding this phone?</h2><p class="note">Pick a seat. Your partner takes the other one on their phone. You'll choose a nickname next.</p></div>
   <div class="pick">${["coral", "riptide"].map((p) => `<button type="button" class="${p}" data-act="claim" data-p="${p}" ><b>${label(p)}</b><span>${taken(p) ? (pendingConfirm === "take:" + p ? "Tap again to take over" : "Taken — tap twice to take over") : "Play as " + label(p)}</span></button>`).join("")}</div>`;
@@ -828,10 +860,10 @@ $("#game").addEventListener("click", async (e) => {
     const p = el.dataset.p;
     if (mode === "db") {
       const k = claimKey(), claims = { ...((S() || {}).claims || {}) };
-      if (claims[p] && claims[p] !== k && pendingConfirm !== "take:" + p) { pendingConfirm = "take:" + p; return render(); }
+      if (claims[p] && !ownsSeat(claims, p) && pendingConfirm !== "take:" + p) { pendingConfirm = "take:" + p; return render(); }
       pendingConfirm = null;
       const patch = { [p]: k };
-      for (const q of ["coral", "riptide"]) if (q !== p && claims[q] === k) patch[q] = null; // never delete keys: null merges cleanly
+      for (const q of ["coral", "riptide"]) if (q !== p && ownsSeat(claims, q)) patch[q] = null; // never delete keys: null merges cleanly
       await updateState({ claims: patch }, { claims: { ...claims, ...patch } });
     } else { LS.set("ptl_player", p); render(); }
     return;
@@ -842,7 +874,7 @@ $("#game").addEventListener("click", async (e) => {
     if (mode === "db") {
       const k = claimKey(), claims = { ...((S() || {}).claims || {}) };
       const patch = {};
-      for (const q of ["coral", "riptide"]) if (claims[q] === k) patch[q] = null;
+      for (const q of ["coral", "riptide"]) if (ownsSeat(claims, q)) patch[q] = null;
       await updateState({ claims: patch }, { claims: { ...claims, ...patch } });
     } else { LS.del("ptl_player"); render(); }
     return;

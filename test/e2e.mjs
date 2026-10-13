@@ -460,7 +460,7 @@ function fakeClaude({ uid, hold }) {
   window.__notify = (s) => { window.__store = new Map(JSON.parse(s)); fire(); };
   window.__release = () => { window.__hold = false; fire(); };
   const op = (o, path, data) => window.__op(o, path, data == null ? null : JSON.stringify(data));
-  const doc = (path) => ({ set: (d) => op("set", path, d), update: (d) => op("update", path, d), delete: () => op("delete", path),
+  const doc = (path) => ({ get: async () => snapOf(path), set: (d) => op("set", path, d), update: (d) => op("update", path, d), delete: () => op("delete", path),
     onSnapshot(cb) { const f = () => { if (window.__hold && path === "game/state") cb({ exists: false, data: () => undefined, metadata: { fromCache: true, hasPendingWrites: false } }); else cb(snapOf(path)); }; ls.add(f); setTimeout(f, 0); return () => ls.delete(f); } });
   const col = (c) => ({ onSnapshot(cb) { const f = () => cb(colSnap(c)); ls.add(f); setTimeout(f, 0); return () => ls.delete(f); } });
   const dbo = { doc, collection: col };
@@ -511,6 +511,15 @@ async function pinSetup(page) {
   check(/Taken/.test(await cb.textContent()) && !(await cb.isDisabled()), "db: taken slot is tappable and labelled Taken");
   await claim(B, "riptide"); await B.waitForSelector(".tabs");
 
+  // phone storage wiped (iPhone eviction, or Claude app vs Safari): PIN and seat come back from the account
+  check(dbStore.has("data/users/u_a/prefs") && !!dbStore.get("data/users/u_a/prefs").pinHash, "db: PIN hash saved to the account's private data");
+  await A.evaluate(() => localStorage.clear()); await A.reload(); await pause(A, 300);
+  await click(A, "#d-icon");
+  check(await A.isVisible("#d-unlock-pin"), "wiped phone: bottle opens the code field, not PIN setup");
+  await A.locator("#d-unlock-pin").pressSequentially("4321"); await pause(A, 300);
+  check(await A.isVisible("#game"), "wiped phone: saved PIN unlocks");
+  check((await A.locator(".tabs").count()) === 1 && /Coral/.test(await A.textContent(".who")), "wiped phone: still seated as Coral, no picker");
+
   // flip persists
   await click(A, '[data-tab="today"]'); await click(A, '[data-act="flip"]');
   check([...dbStore.keys()].some((k) => k.startsWith("plays/")), "db: flip writes a plays doc");
@@ -547,8 +556,8 @@ async function pinSetup(page) {
 
   // (6) db mode: nickname chosen on one phone shows live on the other
   {
-    const A2 = await newDbPage("u_a"), B2 = await newDbPage("u_b");
     dbStore.clear(); await dbBroadcast();
+    const A2 = await newDbPage("u_a"), B2 = await newDbPage("u_b");
     await pinSetup(A2); await A2.waitForSelector("#s-start");
     await A2.fill("#s-start", "2026-10-11"); await A2.fill("#s-days", "6");
     await click(A2, '[data-act="savesetup"]'); await A2.waitForSelector('[data-act="claim"]');
