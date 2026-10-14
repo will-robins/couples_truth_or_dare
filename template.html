@@ -72,6 +72,15 @@ button, input, select, textarea { font: inherit; }
 .tide i.past { background: var(--kelp); opacity: .55; }
 .tide i.now { background: var(--coral); }
 .tide i.wc { box-shadow: 0 0 0 1px var(--sand); }
+.tide button { flex: 1; height: 22px; padding: 8px 0; margin: -8px 0; background: none; border: 0; cursor: pointer; display: flex; }
+.tide button i { flex: 1; }
+.tide button[disabled] { cursor: default; }
+.tide i.sel { outline: 2px solid var(--foam); outline-offset: 2px; }
+.daynav { display: flex; align-items: center; gap: 6px; }
+.daynav button { background: var(--sea); border: 1px solid var(--line); color: var(--foam); border-radius: 999px; width: 34px; height: 34px; font-size: 1.1rem; cursor: pointer; line-height: 1; }
+.daynav button[disabled] { opacity: .35; cursor: default; }
+.lookback { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hrow.muted .t { color: var(--foam-dim); font-style: italic; }
 .note { color: var(--foam-dim); font-size: .9rem; line-height: 1.45; margin: 0 0 14px; }
 .partnerline { font-size: .85rem; color: var(--foam-dim); margin: 0 0 14px; }
 .partnerline b { color: var(--foam); font-weight: 600; }
@@ -319,7 +328,7 @@ function unlock() {
 function lock() {
   unlocked = false; clearTimeout(idleTimer);
   clearTimeout(toastTimer); const tt = $("#toast"); if (tt) tt.remove();
-  revealed = new Set(); pendingConfirm = null; dirty = false;
+  revealed = new Set(); pendingConfirm = null; dirty = false; viewDay = null;
   const g = $("#game"); g.innerHTML = ""; g.hidden = true;
   document.body.classList.remove("in-game"); $("#decoy").hidden = false; $("#d-pin").hidden = true; hideUnlock();
   renderDecoy(); window.scrollTo(0, 0);
@@ -595,6 +604,7 @@ function leaderFor(st, d) {
 /* ================= UI state ================= */
 let tab = LS.get("ptl_tab", "today");
 let revealed = new Set();
+let viewDay = null; // a past day being looked at on the Today tab (null = today)
 let pendingConfirm = null;
 let toastTimer = null;
 function toast(msg) {
@@ -668,13 +678,22 @@ function viewNick(st, first) {
   <div class="actions"><button type="button" class="btn go" data-act="nickown">Use this name</button>${first ? `<button type="button" class="btn ghost" data-act="release">Wrong seat? Go back</button>` : `<button type="button" class="btn ghost" data-tab="settings">Cancel</button>`}</div></div>`;
 }
 
-function tideBar(st, d) {
-  let s = ""; for (let i = 1; i <= st.days; i++) s += `<i class="${i < d ? "past" : i === d ? "now" : ""} ${isWC(st, i) ? "wc" : ""}" title="Day ${i}"></i>`;
-  return `<div class="tide" aria-hidden="true">${s}</div>`;
+function tideBar(st, d, sel) {
+  // d = today's day number; days up to today can be opened
+  let s = "";
+  for (let i = 1; i <= st.days; i++) {
+    const cls = `${i < d ? "past" : i === d ? "now" : ""} ${isWC(st, i) ? "wc" : ""} ${sel === i ? "sel" : ""}`;
+    s += i <= d ? `<button type="button" data-day="${i}" aria-label="Day ${i}"><i class="${cls}"></i></button>` : `<button type="button" disabled aria-label="Day ${i}, not yet"><i class="${cls}"></i></button>`;
+  }
+  return `<div class="tide">${s}</div>`;
+}
+function dayNav(d, cur, last) {
+  return `<span class="daynav"><button type="button" data-day="${d - 1}" aria-label="Previous day" ${d <= 1 ? "disabled" : ""}>‹</button><button type="button" data-day="${d + 1}" aria-label="Next day" ${d >= Math.min(cur, last) ? "disabled" : ""}>›</button></span>`;
 }
 function viewToday(st) {
   const d = dayNum(st), pl = me(), start = parseYmd(st.startDate);
   if (d < 1) return `<div class="dayline"><h2>Not yet</h2></div>${tideBar(st, 0)}<p class="note">The game starts ${esc(fmtDate(start))}. You can write cards for your partner in the meantime.</p>`;
+  if (viewDay && viewDay >= 1 && viewDay < Math.min(d, st.days + 1)) return viewPastDay(st, viewDay, d);
   if (d > st.days) return finalView(st);
   const play = playOf(st, pl, d) || { player: pl, day: d, epoch: st.epoch, slots: {} };
   const slots = slotsFor(st, d);
@@ -684,7 +703,7 @@ function viewToday(st) {
   if (isWC(st, d)) { const L = leaderFor(st, d); intro = `<p class="note">Winner's Choice night. ${L === "tie" ? "You're tied going in, so you each choose one thing." : `${nameOf(L)} is in the lead and picks tonight.`}</p>`; }
   else if (isLightFinal(st, d)) intro = `<p class="note">Last night: packing, early alarm. Tonight's dare is short and quiet. Scores lock at 4am.</p>`;
   const allResolved = slots.length > 0 && slots.every((s) => { const x = play.slots[s.key]; return x && (x.status === "done" || (x.status === "skipped" && x.forfeitDone)); });
-  return `<div class="dayline"><h2>Day ${d} of ${st.days}</h2><span class="date">${esc(fmtDate(addDays(start, d - 1)))}</span></div>${tideBar(st, d)}${intro}
+  return `<div class="dayline"><h2>Day ${d} of ${st.days}</h2>${dayNav(d, d, st.days)}</div><div class="date note" style="margin:0">${esc(fmtDate(addDays(start, d - 1)))}</div>${tideBar(st, d, d)}${intro}
   <p class="partnerline"><b>${nameOf(partner)}</b> has finished ${pdone} of ${pslots} today.${(() => { const n = toConfirm(st, pl); return n ? ` <button type="button" class="reveal" data-tab="scores">${n} dare${n > 1 ? "s" : ""} to confirm</button>` : ""; })()}</p>
   <div class="stack">${slots.map((s) => slotCard(st, play, s, d)).join("")}${allResolved ? wildCard(st, play, d) : ""}</div>`;
 }
@@ -731,10 +750,49 @@ function wildCard(st, play, d) {
   return `<section class="slot wild"><div class="slot-top"><span class="slot-name">Wild card</span>${w.played ? `<span class="chip done">Played</span>` : ""}</div><p class="cardtext">${esc(c ? wildText(st, c) : "")}</p>
   ${w.played ? "" : `<div class="actions"><button type="button" class="btn go" data-act="playwild">Play it</button></div>`}</section>`;
 }
+// A finished day, read-only: both players' cards, answers (partner's behind a tap), points, and any dares still to confirm.
+function dayTotal(st, p, day) {
+  const x = playOf(st, p, day); let t = 0;
+  if (x) Object.entries(x.slots || {}).forEach(([k, sl]) => { t += slotPoints(st, sl) + confirmBonus(st, p, day, k, sl); });
+  const m = ptsOf(st).wild;
+  [p, other(p)].forEach((q) => { const y = playOf(st, q, day); if (y && y.wild && y.wild.played && ALL[y.wild.cardId]) t += (q === p ? ALL[y.wild.cardId].self : ALL[y.wild.cardId].partner) * m; });
+  return t;
+}
+function pastRow(st, p, day, s, sl) {
+  const pl = me(), mine = p === pl;
+  if (!sl || !sl.cardId) return `<div class="hrow muted"><div class="meta"><span>${esc(s.name)}</span><span>—</span></div><div class="t">Never turned over</div></div>`;
+  const c = cardById(sl.cardId); if (!c) return "";
+  if (sl.status === "open") return `<div class="hrow muted"><div class="meta"><span>${esc(s.name)}</span><span>—</span></div><div class="t">${mine ? esc(c.text) + " (not finished)" : "Turned over, not finished"}</div></div>`;
+  const key = `${p}-${day}-${s.key}`, bonus = confirmBonus(st, p, day, s.key, sl);
+  let extra = "";
+  const full = c.wc === "choice" && sl.choice != null ? DECK.winnersChoice[sl.choice] + (sl.answer ? " · " + sl.answer : "") : sl.answer;
+  if (full) extra += mine || revealed.has(key) ? `<div class="answer">${mine ? "Your answer" : nameOf(p) + "'s answer"}: ${esc(full)}</div>` : `<button type="button" class="reveal" data-act="reveal" data-k="${key}">Tap to read ${nameOf(p)}'s answer</button>`;
+  if (sl.status === "skipped" && ALL[sl.forfeitId]) extra += `<div class="from">Forfeit${sl.forfeitDone ? " (paid)" : ""}: ${esc(ALL[sl.forfeitId].text)}</div>`;
+  if (DARE_KEYS.has(s.key) && sl.status === "done") {
+    if (confirmedBy(st, p, day, s.key, sl)) extra += `<div class="from">Confirmed by ${nameOf(other(p))}, +${bonus}</div>`;
+    else if (dayNum(st) > st.days) extra += `<div class="from">Not confirmed</div>`;
+    else if (mine) extra += `<div class="from">Waiting for ${nameOf(other(p))} to confirm</div>`;
+    else extra += `<div class="actions"><button type="button" class="btn small go" data-act="confirm" data-p="${p}" data-day="${day}" data-key="${s.key}">Confirm it happened (+${confirmPts(st)} for ${nameOf(p)})</button></div>`;
+  }
+  const pts = slotPoints(st, sl) + bonus;
+  return `<div class="hrow"><div class="meta"><span>${esc(s.name)}</span><span>${sl.status === "done" ? "+" + pts : "Skipped " + pts}</span></div><div class="t">${esc(c.text)}</div>${extra}</div>`;
+}
+function viewPastDay(st, day, cur) {
+  const pl = me(), start = parseYmd(st.startDate), slots = slotsFor(st, day);
+  const col = (p) => {
+    const x = playOf(st, p, day), t = dayTotal(st, p, day);
+    const rows = slots.map((s) => pastRow(st, p, day, s, x && x.slots ? x.slots[s.key] : null)).join("");
+    const w = x && x.wild && x.wild.played && ALL[x.wild.cardId] ? `<div class="hrow"><div class="meta"><span>Wild card</span><span>${ALL[x.wild.cardId].self * ptsOf(st).wild >= 0 ? "+" : ""}${ALL[x.wild.cardId].self * ptsOf(st).wild}</span></div><div class="t">${esc(wildText(st, ALL[x.wild.cardId]))}</div></div>` : "";
+    return `<h3 class="sec">${p === pl ? "You" : esc(nameOf(p))} · ${t >= 0 ? "+" : ""}${t} that day</h3><div class="hist">${rows}${w}</div>`;
+  };
+  return `<div class="dayline"><h2>Day ${day} of ${st.days}</h2>${dayNav(day, cur, st.days)}</div><div class="date note" style="margin:0">${esc(fmtDate(addDays(start, day - 1)))}</div>${tideBar(st, cur, day)}
+  <div class="lookback"><p class="note" style="margin:0">Looking back. Cards from past days can't be changed.</p><button type="button" class="btn small" data-act="backtoday">${cur > st.days ? "Final scores" : "Back to today"}</button></div>
+  ${col(pl)}${col(other(pl))}`;
+}
 function finalView(st) {
   const a = scoreOf(st, "coral").net, b = scoreOf(st, "riptide").net;
   const w = a === b ? null : a > b ? "coral" : "riptide";
-  return `<div class="hero"><h2>${w ? `${nameOf(w)} wins` : "Dead heat"}</h2><p class="note">Final score ${nameOf("coral")} ${a}, ${nameOf("riptide")} ${b}. Unspent coupons in the Wallet still count at home.</p></div>${tideBar(st, st.days + 1)}`;
+  return `<div class="hero"><h2>${w ? `${nameOf(w)} wins` : "Dead heat"}</h2><p class="note">Final score ${nameOf("coral")} ${a}, ${nameOf("riptide")} ${b}. Unspent coupons in the Wallet still count at home. Tap a day below to look back.</p></div>${tideBar(st, st.days + 1)}`;
 }
 
 function viewScores(st) {
@@ -851,7 +909,12 @@ function slotDef(st, key) { return slotsFor(st, dayNum(st)).find((s) => s.key ==
 $("#game").addEventListener("click", async (e) => {
   if (e.target.closest("[data-tab],[data-act]") && typing(document.activeElement)) document.activeElement.blur(); // explicit action: let it render
   const tb = e.target.closest("[data-tab]");
-  if (tb) { tab = tb.dataset.tab; LS.set("ptl_tab", tab); pendingConfirm = null; render(); window.scrollTo(0, 0); return; }
+  if (tb) { tab = tb.dataset.tab; LS.set("ptl_tab", tab); pendingConfirm = null; if (tab === "today") viewDay = null; render(); window.scrollTo(0, 0); return; }
+  const dy = e.target.closest("[data-day]:not([data-act])");
+  if (dy && !dy.disabled && S()) {
+    const cur = dayNum(S()), want = +dy.dataset.day;
+    viewDay = want >= cur || want < 1 ? null : want; render(); window.scrollTo(0, 0); return;
+  }
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act, st = S();
   if (act === "lock") return lock();
@@ -883,6 +946,7 @@ $("#game").addEventListener("click", async (e) => {
   if (act === "resetno") { pendingConfirm = null; return render(); }
   if (act === "resetyes") { pendingConfirm = null; await updateState({ epoch: (S().epoch || 1) + 1 }); tab = "today"; toast("Game reset."); return; }
   if (act === "reveal") { revealed.add(el.dataset.k); return render(); }
+  if (act === "backtoday") { viewDay = null; render(); window.scrollTo(0, 0); return; }
   if (!st || !me()) return;
   if (act === "gonick") { tab = "nick"; render(); window.scrollTo(0, 0); return; }
   if (act === "nick" || act === "nickown") {

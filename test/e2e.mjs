@@ -276,6 +276,25 @@ await click(page, '[data-act="lock"]');
 eq(await page.locator("#toast").count(), 0, "lock removes the toast");
 await unlock(page);
 
+// looking back at earlier days from the Today tab
+console.log("Past days");
+await click(page, '[data-tab="today"]');
+await click(page, '.tide [data-day="2"]');
+const pastTxt = await page.textContent("#game");
+check(/Day 2 of 6/.test(pastTxt) && /Looking back/.test(pastTxt), "tapping day 2 on the tide bar opens day 2");
+check(/Your answer/.test(pastTxt), "past day shows your truth answer");
+eq(await page.locator('#game [data-act="flip"], #game [data-act="done"], #game [data-act="skip"]').count(), 0, "past day has no play buttons");
+await click(page, '.daynav [aria-label="Previous day"]');
+check(/Day 1 of 6/.test(await page.textContent("#game")), "previous arrow goes to day 1");
+check(await page.locator('.daynav [aria-label="Previous day"]').isDisabled(), "no day before day 1");
+await click(page, '[data-act="backtoday"]');
+const nowTxt = await page.textContent("#game");
+check(/Day 6 of 6/.test(nowTxt) && !/Looking back/.test(nowTxt), "Back to today returns to today");
+await setDay(page, 3);
+check(await page.locator('.tide [aria-label="Day 5, not yet"]').isDisabled(), "future days can't be opened");
+await overflow(page, "past day view");
+await setDay(page, 6);
+
 /* Winner's Choice leader is fixed by scores before that day; custom cards skip quickie/WC/hotter slots */
 console.log("Winner's Choice / custom rules");
 await click(page, '[data-tab="write"]');

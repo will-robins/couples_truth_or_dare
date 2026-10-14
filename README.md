@@ -36,6 +36,10 @@ Cards start face-down. Tap a card to turn it over.
 
 **The last night** is night 6 by default. It is a short, quiet dare for packing night.
 
+## Looking back at earlier days
+
+On the **Today** tab, tap any earlier segment of the tide bar, or use the ‹ › arrows next to the day title. A past day shows both players' cards, points and forfeits. Your partner's truth answers stay hidden until you tap them, and any dares you haven't confirmed yet can still be confirmed there. Past cards can't be changed. **Back to today** returns to the current day.
+
 ## Points
 
 | Card | Truth | Dare |
